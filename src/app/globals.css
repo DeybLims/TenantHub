@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-surface text-navy antialiased;
+  }
+}
+
+@layer components {
+  .dashboard-grid {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "kpis"
+      "charts"
+      "table";
+  }
+
+  .dashboard-area-kpis {
+    grid-area: kpis;
+  }
+
+  .dashboard-area-charts {
+    grid-area: charts;
+  }
+
+  .dashboard-area-table {
+    grid-area: table;
+  }
+}

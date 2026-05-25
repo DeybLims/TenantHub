@@ -7,11 +7,12 @@ import {
   transformSheetToDashboard,
 } from "@/lib/transformSheetData";
 import type { DashboardData } from "@/types/dashboard";
+import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
 
 export const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
-  "https://script.google.com/macros/s/AKfycbyg03qS3-czX48MbmXNXAMgP7wtkyktmNy3N8hG0hh3NAaon_fxNAPgy3KV1NRhhWlA/exec";
+  "https://script.google.com/macros/s/AKfycbz17asvx2Gnydy5pP3POrG72pI7lmPRoyvLrLoRxdE-sK6pMFEcu4bEV96IehqR3MEu/exec";
 
 /** Fetches billing data for the dashboard, optionally filtered by month. */
 export async function fetchBilling(month?: string): Promise<DashboardData> {
@@ -42,6 +43,55 @@ export async function fetchBilling(month?: string): Promise<DashboardData> {
 
 /** @deprecated Use fetchBilling */
 export const fetchDashboardData = fetchBilling;
+
+/** Fetches raw billing rows for tenant payment status joins. */
+export async function fetchBillingRows(month?: string): Promise<SheetRow[]> {
+  if (USE_MOCK) {
+    return getMockBillingRows();
+  }
+
+  const params = new URLSearchParams({ action: "getBilling" });
+  if (month) {
+    params.set("month", month);
+  }
+
+  const response = await fetch(`/api/dashboard?${params.toString()}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(
+      body?.error ??
+        `Failed to fetch billing rows: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const data: unknown = await response.json();
+
+  if (isSheetRowArray(data)) {
+    return data;
+  }
+
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    "data" in data &&
+    isSheetRowArray((data as { data: unknown }).data)
+  ) {
+    return (data as { data: SheetRow[] }).data;
+  }
+
+  throw new Error("Invalid billing response: expected a JSON array of rows");
+}
+
+export function getMockBillingRows(): SheetRow[] {
+  return getMockDashboardData().reportSheetRows;
+}
 
 const USE_MOCK =
   process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
@@ -218,6 +268,7 @@ export function getMockDashboardData(): DashboardData {
         Adjustment: 0,
         TotalDue: 12914,
         Paid: 0,
+        DatePaid: null,
         Status: "Unpaid",
       },
       {
@@ -235,6 +286,7 @@ export function getMockDashboardData(): DashboardData {
         Adjustment: 0,
         TotalDue: 9126,
         Paid: 9126,
+        DatePaid: "2026-03-15T00:00:00.000Z",
         Status: "Paid",
       },
     ],

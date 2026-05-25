@@ -1,42 +1,116 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AddTenantModal } from "@/components/tenants/AddTenantModal";
+import { TenantDetailPanel } from "@/components/tenants/TenantDetailPanel";
+import { TenantDetailPlaceholder } from "@/components/tenants/TenantDetailPlaceholder";
 import { TenantsTable } from "@/components/tenants/TenantsTable";
+import { MonthSelect } from "@/components/dashboard/MonthSelect";
 import { AppShell } from "@/components/layout/AppShell";
-import { fetchTenants, getMockTenants } from "@/services/api";
-import type { TenantRecord } from "@/types/tenant";
+import {
+  findTenantBillingRow,
+  getBillingMonthOptions,
+  getDefaultBillingMonth,
+  joinTenantsWithBilling,
+  type TenantTableRow,
+} from "@/lib/joinTenantsBilling";
+import {
+  fetchBillingRows,
+  fetchTenants,
+  getMockBillingRows,
+  getMockTenants,
+} from "@/services/api";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
 export function TenantsPage() {
   const [search, setSearch] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState<TenantTableRow | null>(
+    null,
+  );
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["tenants"],
-    queryFn: () => (USE_MOCK ? Promise.resolve(getMockTenants()) : fetchTenants()),
+  const [tenantsQuery, billingQuery] = useQueries({
+    queries: [
+      {
+        queryKey: ["tenants"],
+        queryFn: () =>
+          USE_MOCK ? Promise.resolve(getMockTenants()) : fetchTenants(),
+      },
+      {
+        queryKey: ["billing", "rows"],
+        queryFn: () =>
+          USE_MOCK ? Promise.resolve(getMockBillingRows()) : fetchBillingRows(),
+      },
+    ],
   });
 
+  const tenants = tenantsQuery.data;
+  const billingRows = billingQuery.data;
+
+  const monthOptions = useMemo(
+    () => (billingRows ? getBillingMonthOptions(billingRows) : []),
+    [billingRows],
+  );
+
+  useEffect(() => {
+    if (!billingRows?.length || selectedMonth) return;
+    setSelectedMonth(getDefaultBillingMonth(billingRows));
+  }, [billingRows, selectedMonth]);
+
+  const joinedTenants = useMemo(() => {
+    if (!tenants || !billingRows || !selectedMonth) return [];
+    return joinTenantsWithBilling(tenants, billingRows, selectedMonth);
+  }, [tenants, billingRows, selectedMonth]);
+
   const filteredTenants = useMemo(() => {
-    if (!data) return [];
-
     const query = search.trim().toLowerCase();
-    if (!query) return data;
+    if (!query) return joinedTenants;
 
-    return data.filter((tenant) => {
+    return joinedTenants.filter((tenant) => {
       const unitMatch = tenant.UnitCode.toLowerCase().includes(query);
       const nameMatch = tenant.Name.toLowerCase().includes(query);
-      return unitMatch || nameMatch;
+      const roomMatch = String(tenant.Room).includes(query);
+      return unitMatch || nameMatch || roomMatch;
     });
-  }, [data, search]);
+  }, [joinedTenants, search]);
 
-  const handleDelete = (tenant: TenantRecord) => {
-    window.alert(
-      `Delete for ${tenant.Name} (${tenant.UnitCode || `Room ${tenant.Room}`}) will connect to your API later.`,
+  const selectedTenantRow = useMemo(() => {
+    if (!selectedTenant) return null;
+    return (
+      joinedTenants.find((tenant) => tenant.Room === selectedTenant.Room) ?? null
     );
+  }, [joinedTenants, selectedTenant]);
+
+  const selectedBilling = useMemo(() => {
+    if (!selectedTenantRow || !billingRows || !selectedMonth) {
+      return undefined;
+    }
+    return findTenantBillingRow(
+      billingRows,
+      selectedTenantRow.Room,
+      selectedMonth,
+    );
+  }, [selectedTenantRow, billingRows, selectedMonth]);
+
+  useEffect(() => {
+    if (
+      selectedTenant &&
+      !filteredTenants.some((tenant) => tenant.Room === selectedTenant.Room)
+    ) {
+      setSelectedTenant(null);
+    }
+  }, [filteredTenants, selectedTenant]);
+
+  const isLoading = tenantsQuery.isLoading || billingQuery.isLoading;
+  const isError = tenantsQuery.isError || billingQuery.isError;
+  const error = tenantsQuery.error ?? billingQuery.error;
+
+  const handleSelectTenant = (tenant: TenantTableRow) => {
+    setSelectedTenant(tenant);
   };
 
   return (
@@ -48,6 +122,13 @@ export function TenantsPage() {
           </h1>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <MonthSelect
+              months={monthOptions}
+              value={selectedMonth}
+              onChange={setSelectedMonth}
+              disabled={isLoading || monthOptions.length === 0}
+            />
+
             <div className="relative">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
@@ -57,7 +138,7 @@ export function TenantsPage() {
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name or unit code…"
+                placeholder="Search by name, unit code, or room…"
                 className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-700 shadow-sm placeholder:text-gray-400 focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20 sm:w-64"
                 aria-label="Search tenants"
               />
@@ -88,17 +169,43 @@ export function TenantsPage() {
 
           {isError && (
             <p className="py-8 text-center text-sm text-red-600">
-              {error instanceof Error ? error.message : "Failed to load tenants"}
+              {error instanceof Error
+                ? error.message
+                : "Failed to load tenants"}
             </p>
           )}
 
           {!isLoading && !isError && (
-            <TenantsTable tenants={filteredTenants} onDelete={handleDelete} />
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+              <div className="min-w-0 lg:w-2/3">
+                <TenantsTable
+                  tenants={filteredTenants}
+                  selectedTenant={selectedTenantRow}
+                  onSelectTenant={handleSelectTenant}
+                />
+              </div>
+
+              <div className="min-w-0 lg:w-1/3">
+                {selectedTenantRow ? (
+                  <TenantDetailPanel
+                    tenant={selectedTenantRow}
+                    billing={selectedBilling}
+                    selectedMonth={selectedMonth}
+                    onClose={() => setSelectedTenant(null)}
+                  />
+                ) : (
+                  <TenantDetailPlaceholder />
+                )}
+              </div>
+            </div>
           )}
         </div>
       </article>
 
-      <AddTenantModal open={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <AddTenantModal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
     </AppShell>
   );
 }

@@ -14,5 +14,6 @@ export interface SheetRow {
   Total?: number | string;
   TotalDue?: number | string;
   Paid?: number | string;
+  DatePaid?: string | null;
   Status: string;
 }

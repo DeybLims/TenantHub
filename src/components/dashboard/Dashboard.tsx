@@ -8,6 +8,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { downloadMonthReportCsv } from "@/lib/exportReport";
 import { fetchBilling, getMockDashboardData } from "@/services/api";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { KpiCard } from "@/components/dashboard/KpiCard";
@@ -53,9 +54,19 @@ export function Dashboard() {
     />
   );
 
+  const handleDownloadReport = () => {
+    if (data) {
+      downloadMonthReportCsv(data);
+    }
+  };
+
   if (isInitialLoad) {
     return (
-      <DashboardLayout monthSelector={monthSelector}>
+      <DashboardLayout
+        monthSelector={monthSelector}
+        onDownloadReport={handleDownloadReport}
+        downloadDisabled
+      >
         <DashboardSkeleton />
       </DashboardLayout>
     );
@@ -63,7 +74,11 @@ export function Dashboard() {
 
   if (isError || !data) {
     return (
-      <DashboardLayout monthSelector={monthSelector}>
+      <DashboardLayout
+        monthSelector={monthSelector}
+        onDownloadReport={handleDownloadReport}
+        downloadDisabled
+      >
         <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           {error instanceof Error ? error.message : "Failed to load dashboard"}
         </p>
@@ -74,7 +89,11 @@ export function Dashboard() {
   const { kpis, paymentStatus, properties, utilities } = data;
 
   return (
-    <DashboardLayout monthSelector={monthSelector}>
+    <DashboardLayout
+      monthSelector={monthSelector}
+      onDownloadReport={handleDownloadReport}
+      downloadDisabled={isFetching}
+    >
       <div className="dashboard-area-kpis relative">
         {showOverlay && <DashboardLoadingOverlay />}
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

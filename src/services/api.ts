@@ -1,12 +1,17 @@
 import {
+  getMockTenants,
+  normalizeTenants,
+} from "@/lib/normalizeTenants";
+import {
   isSheetRowArray,
   transformSheetToDashboard,
 } from "@/lib/transformSheetData";
 import type { DashboardData } from "@/types/dashboard";
+import type { TenantRecord } from "@/types/tenant";
 
 export const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
-  "https://script.google.com/macros/s/AKfycbzoFuKibrampjbSPTIUncR4Uwq26G_1z9Xd5UgEtXPAmffu446BMM_U5MCouFna5keA/exec";
+  "https://script.google.com/macros/s/AKfycbyg03qS3-czX48MbmXNXAMgP7wtkyktmNy3N8hG0hh3NAaon_fxNAPgy3KV1NRhhWlA/exec";
 
 /** Fetches billing data for the dashboard, optionally filtered by month. */
 export async function fetchBilling(month?: string): Promise<DashboardData> {
@@ -37,6 +42,43 @@ export async function fetchBilling(month?: string): Promise<DashboardData> {
 
 /** @deprecated Use fetchBilling */
 export const fetchDashboardData = fetchBilling;
+
+const USE_MOCK =
+  process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
+
+/** Fetches tenant records from the Sheets API. */
+export async function fetchTenants(): Promise<TenantRecord[]> {
+  if (USE_MOCK) {
+    return getMockTenants();
+  }
+
+  const response = await fetch("/api/tenants", {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(
+      body?.error ??
+        `Failed to fetch tenants: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const data: unknown = await response.json();
+  const tenants = normalizeTenants(data);
+
+  if (tenants.length === 0) {
+    return getMockTenants();
+  }
+
+  return tenants;
+}
+
+export { getMockTenants };
 
 function normalizeDashboardData(
   data: unknown,
@@ -99,6 +141,7 @@ function normalizeDashboardData(
           status: parseStatus(row.status),
         }))
       : [],
+    reportSheetRows: [],
     availableMonths: Array.isArray(payload.availableMonths)
       ? (payload.availableMonths as DashboardData["availableMonths"])
       : [],
@@ -157,6 +200,42 @@ export function getMockDashboardData(): DashboardData {
         allocatedAmount: 1300,
         remainingBalance: 0,
         status: "Pending",
+      },
+    ],
+    reportSheetRows: [
+      {
+        Month: "2026-03-31T16:00:00.000Z",
+        Room: 1,
+        Rent: 10000,
+        ElecPrev: 6834,
+        ElecCurr: 7010,
+        ElecRate: 14,
+        ElecBill: 2464,
+        WaterPrev: 1076,
+        WaterCurr: 1091,
+        WaterRate: 30,
+        WaterBill: 450,
+        Adjustment: 0,
+        TotalDue: 12914,
+        Paid: 0,
+        Status: "Unpaid",
+      },
+      {
+        Month: "2026-03-31T16:00:00.000Z",
+        Room: 3,
+        Rent: 8000,
+        ElecPrev: 4052,
+        ElecCurr: 4126,
+        ElecRate: 14,
+        ElecBill: 1036,
+        WaterPrev: 199,
+        WaterCurr: 202,
+        WaterRate: 30,
+        WaterBill: 90,
+        Adjustment: 0,
+        TotalDue: 9126,
+        Paid: 9126,
+        Status: "Paid",
       },
     ],
     availableMonths: [

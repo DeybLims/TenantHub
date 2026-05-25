@@ -116,7 +116,7 @@ export function buildProperties(tenants: SheetRow[]): PropertyOccupancy[] {
 
 function buildTenantMonthDashboard(rows: SheetRow[]): Omit<
   DashboardData,
-  "revenueTrend" | "availableMonths" | "activeMonth"
+  "revenueTrend" | "reportSheetRows" | "availableMonths" | "activeMonth"
 > {
   const tenants = tenantRows(rows);
   const revenue = tenants.reduce((sum, r) => sum + rowTotalDue(r), 0);
@@ -178,7 +178,7 @@ function buildTenantMonthDashboard(rows: SheetRow[]): Omit<
 
 function buildLegacyMonthDashboard(rows: SheetRow[]): Omit<
   DashboardData,
-  "revenueTrend" | "availableMonths" | "activeMonth"
+  "revenueTrend" | "reportSheetRows" | "availableMonths" | "activeMonth"
 > {
   const tenants = tenantRows(rows);
   const aptTenants = findRow(rows, "APT TENANTS");
@@ -340,6 +340,7 @@ export function transformSheetToDashboard(
   return {
     ...dashboard,
     revenueTrend,
+    reportSheetRows: tenantRows(monthRows),
     availableMonths: getAvailableMonths(rows),
     activeMonth,
   };

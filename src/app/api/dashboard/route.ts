@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
-  "https://script.google.com/macros/s/AKfycbzoFuKibrampjbSPTIUncR4Uwq26G_1z9Xd5UgEtXPAmffu446BMM_U5MCouFna5keA/exec";
+  "https://script.google.com/macros/s/AKfycbyg03qS3-czX48MbmXNXAMgP7wtkyktmNy3N8hG0hh3NAaon_fxNAPgy3KV1NRhhWlA/exec";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;

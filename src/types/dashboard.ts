@@ -34,12 +34,16 @@ export interface MonthOption {
   label: string;
 }
 
+import type { SheetRow } from "@/types/sheet";
+
 export interface DashboardData {
   kpis: DashboardKpis;
   revenueTrend: RevenueTrendPoint[];
   paymentStatus: PaymentStatus;
   properties: PropertyOccupancy[];
   utilities: UtilityRow[];
+  /** Tenant rows for the selected month — used for CSV export. */
+  reportSheetRows: SheetRow[];
   availableMonths: MonthOption[];
   activeMonth: string;
 }

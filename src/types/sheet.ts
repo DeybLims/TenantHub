@@ -15,5 +15,8 @@ export interface SheetRow {
   TotalDue?: number | string;
   Paid?: number | string;
   DatePaid?: string | null;
+  BillingDate?: string | null;
+  DueDate?: string | null;
+  Notes?: string | null;
   Status: string;
 }

@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 const navItems = [
   { label: "Dashboard", href: "/", icon: LayoutGrid },
   { label: "Tenants", href: "/tenants", icon: Users },
-  { label: "Billing", href: "#", icon: FileText },
+  { label: "Billing", href: "/billing", icon: FileText },
   { label: "Expenses", href: "#", icon: Wallet },
 ];
 

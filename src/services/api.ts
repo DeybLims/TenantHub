@@ -6,6 +6,7 @@ import {
   isSheetRowArray,
   transformSheetToDashboard,
 } from "@/lib/transformSheetData";
+import type { GenerateBillPayload } from "@/types/billing";
 import type { DashboardData } from "@/types/dashboard";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
@@ -95,6 +96,28 @@ export function getMockBillingRows(): SheetRow[] {
 
 const USE_MOCK =
   process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
+
+/** Submits a new bill to the Google Apps Script API. */
+export async function generateBill(data: GenerateBillPayload): Promise<void> {
+  const response = await fetch("/api/billing", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ action: "generateBill", data }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(
+      body?.error ??
+        `Failed to generate bill: ${response.status} ${response.statusText}`,
+    );
+  }
+}
 
 /** Fetches tenant records from the Sheets API. */
 export async function fetchTenants(): Promise<TenantRecord[]> {

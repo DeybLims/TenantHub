@@ -18,7 +18,7 @@ import type { SheetRow } from "@/types/sheet";
 
 export const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
-  "https://script.google.com/macros/s/AKfycbz8H1VJGEPc3KOdNJ8Kn_OcT34MlXddi2axbUjLY9EeZgEHqlbsrThwdX1EAfqBCxep/exec";
+  "https://script.google.com/macros/s/AKfycbxOEKjwP5UXWUJLcsnqNZGWWUOOKTAF9XP5Ldx2Rx4ymHrIO0RoEQldrpnFqcGQH7ao/exec";
 
 /** Fetches billing data for the dashboard, optionally filtered by month. */
 export async function fetchBilling(month?: string): Promise<DashboardData> {

@@ -378,11 +378,10 @@ function updateExistingBill(data) {
   }
 
   const totalDue =
-    Number(data.totalDue) ||
     Number(data.rent) +
-      Number(data.eBill) +
-      Number(data.wBill) +
-      Number(data.adjustment || 0);
+    Number(data.eBill) +
+    Number(data.wBill) +
+    Number(data.adjustment || 0);
 
   sheet.getRange(rowIndex, 1, 1, 16).setValues([
     [

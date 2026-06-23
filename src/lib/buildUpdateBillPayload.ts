@@ -11,6 +11,20 @@ function deriveRate(bill: number, prev: number, curr: number, fallback: number) 
   return bill / usage;
 }
 
+export function calculateBillingTotalDue(data: {
+  baseRent: string;
+  elecBill: string;
+  waterBill: string;
+  otherCharges: string;
+}): number {
+  return (
+    readSheetNumber(data.baseRent) +
+    readSheetNumber(data.elecBill) +
+    readSheetNumber(data.waterBill) +
+    readSheetNumber(data.otherCharges)
+  );
+}
+
 export function buildUpdateBillPayload(
   month: string,
   room: number,
@@ -22,6 +36,7 @@ export function buildUpdateBillPayload(
   const wCurr = readSheetNumber(data.waterCurr);
   const eBill = readSheetNumber(data.elecBill);
   const wBill = readSheetNumber(data.waterBill);
+  const totalDue = calculateBillingTotalDue(data);
 
   return {
     month,
@@ -36,7 +51,7 @@ export function buildUpdateBillPayload(
     wRate: deriveRate(wBill, wPrev, wCurr, 30),
     wBill,
     adjustment: readSheetNumber(data.otherCharges),
-    totalDue: readSheetNumber(data.totalDue),
+    totalDue,
     paid: readSheetNumber(data.amountPaid),
     status: data.status,
     billingDate: data.billingDate || undefined,

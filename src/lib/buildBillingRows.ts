@@ -27,21 +27,25 @@ export function buildBillingTableRows(
   return Array.from(rowByRoom.entries())
     .map(([room, row]) => {
       const tenant = tenantByRoom.get(room);
-      const totalDue = readSheetNumber(row.TotalDue);
+      const rent = readSheetNumber(row.Rent);
+      const elecBill = readSheetNumber(row.ElecBill);
+      const waterBill = readSheetNumber(row.WaterBill);
+      const otherCharges = readSheetNumber(row.Adjustment);
+      const totalDue = rent + elecBill + waterBill + otherCharges;
       const paid = readSheetNumber(row.Paid);
 
       return {
         room,
         unitCode: tenant?.UnitCode || "—",
         tenantName: tenant?.Name || "—",
-        rent: readSheetNumber(row.Rent),
-        elecBill: readSheetNumber(row.ElecBill),
+        rent,
+        elecBill,
         elecPrev: readSheetNumber(row.ElecPrev),
         elecCurr: readSheetNumber(row.ElecCurr),
-        waterBill: readSheetNumber(row.WaterBill),
+        waterBill,
         waterPrev: readSheetNumber(row.WaterPrev),
         waterCurr: readSheetNumber(row.WaterCurr),
-        otherCharges: readSheetNumber(row.Adjustment),
+        otherCharges,
         totalDue,
         paid,
         balance: totalDue - paid,

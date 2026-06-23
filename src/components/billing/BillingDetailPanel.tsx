@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatPesoDecimal } from "@/lib/format";
+import { calculateBillingTotalDue } from "@/lib/buildUpdateBillPayload";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import { getTenantInitials } from "@/lib/tenantInitials";
 import {
@@ -48,7 +49,6 @@ export function BillingDetailPanel({
   const [waterPrev, setWaterPrev] = useState(String(row.waterPrev));
   const [waterCurr, setWaterCurr] = useState(String(row.waterCurr));
   const [otherCharges, setOtherCharges] = useState(String(row.otherCharges));
-  const [totalDue, setTotalDue] = useState(String(row.totalDue));
   const [amountPaid, setAmountPaid] = useState(String(row.paid));
   const [notes, setNotes] = useState(sheetRow?.Notes ?? "");
 
@@ -64,13 +64,22 @@ export function BillingDetailPanel({
     setWaterPrev(String(row.waterPrev));
     setWaterCurr(String(row.waterCurr));
     setOtherCharges(String(row.otherCharges));
-    setTotalDue(String(row.totalDue));
     setAmountPaid(String(row.paid));
     setNotes(sheetRow?.Notes ?? "");
   }, [row, sheetRow]);
 
-  const balance =
-    readSheetNumber(totalDue) - readSheetNumber(amountPaid);
+  const totalDue = useMemo(
+    () =>
+      calculateBillingTotalDue({
+        baseRent,
+        elecBill,
+        waterBill,
+        otherCharges,
+      }),
+    [baseRent, elecBill, waterBill, otherCharges],
+  );
+
+  const balance = totalDue - readSheetNumber(amountPaid);
 
   return (
     <article className="flex h-full flex-col rounded-xl bg-surface-card shadow-card">
@@ -199,10 +208,10 @@ export function BillingDetailPanel({
 
           <FloatingLabelField label="Total Due">
             <input
-              type="number"
-              value={totalDue}
-              onChange={(event) => setTotalDue(event.target.value)}
-              className={`${floatingInputClass} font-bold`}
+              type="text"
+              readOnly
+              value={formatPesoDecimal(totalDue)}
+              className={`${floatingInputClass} cursor-not-allowed bg-gray-50 font-bold`}
             />
           </FloatingLabelField>
 
@@ -261,7 +270,7 @@ export function BillingDetailPanel({
               waterPrev,
               waterCurr,
               otherCharges,
-              totalDue,
+              totalDue: String(totalDue),
               amountPaid,
               notes,
             })

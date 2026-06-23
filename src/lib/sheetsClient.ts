@@ -1,6 +1,6 @@
 const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
-  "https://script.google.com/macros/s/AKfycbz17asvx2Gnydy5pP3POrG72pI7lmPRoyvLrLoRxdE-sK6pMFEcu4bEV96IehqR3MEu/exec";
+  "https://script.google.com/macros/s/AKfycbz9Mw7VSa430fHvojOTJP_JZW5aU4XicYG1UJLH5H4hg_-ief3xStoAfespeZjwykVy/exec";
 
 export async function fetchFromSheets(
   action: string,

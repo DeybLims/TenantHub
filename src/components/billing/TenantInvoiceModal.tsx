@@ -8,7 +8,11 @@ import {
   isCurrentReadingBelowPrevious,
 } from "@/lib/billingMeters";
 import { hasBillForRoomMonth } from "@/lib/buildBillingRows";
-import { formatMonthLabel } from "@/lib/months";
+import {
+  billingMonthToDateInput,
+  formatMonthLabel,
+  resolveBillingMonthValue,
+} from "@/lib/months";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import { generateBill } from "@/services/api";
 import {
@@ -73,24 +77,27 @@ export function TenantInvoiceModal({
     (tenant) => tenant.UnitCode === unitCode,
   );
 
+  const billingMonthForCheck = billingDate || selectedMonth;
+
   const isDuplicate = useMemo(() => {
-    if (!selectedTenant || !selectedMonth) return false;
+    if (!selectedTenant || !billingMonthForCheck) return false;
     return hasBillForRoomMonth(
       billingRows,
       selectedTenant.Room,
-      selectedMonth,
+      billingMonthForCheck,
     );
-  }, [billingRows, selectedMonth, selectedTenant]);
+  }, [billingRows, billingMonthForCheck, selectedTenant]);
 
-  const selectedMonthLabel = formatMonthLabel(selectedMonth);
+  const billingMonthLabel = formatMonthLabel(billingMonthForCheck);
   const formLocked = isDuplicate;
 
   useEffect(() => {
     if (!open) return;
+    const initialDate = billingMonthToDateInput(selectedMonth);
     setUnitCode("");
     setTenantName("");
-    setBillingDate("");
-    setDueDate("");
+    setBillingDate(initialDate);
+    setDueDate(initialDate);
     setBaseRent("");
     setElecPrev("");
     setElecCurr("");
@@ -103,7 +110,7 @@ export function TenantInvoiceModal({
     setElectricitySpecial(false);
     setElectricityRate(DEFAULT_ELECTRICITY_RATE);
     setWaterSpecial(false);
-  }, [open]);
+  }, [open, selectedMonth]);
 
   useEffect(() => {
     if (!selectedTenant) return;
@@ -121,13 +128,17 @@ export function TenantInvoiceModal({
     setWaterPrev(String(wPrev));
 
     if (
-      !hasBillForRoomMonth(billingRows, selectedTenant.Room, selectedMonth)
+      !hasBillForRoomMonth(
+        billingRows,
+        selectedTenant.Room,
+        billingDate || selectedMonth,
+      )
     ) {
       requestAnimationFrame(() => {
         elecCurrRef.current?.focus();
       });
     }
-  }, [selectedTenant, billingRows, selectedMonth]);
+  }, [selectedTenant, billingRows, selectedMonth, billingDate]);
 
   const activeElectricityRate = useMemo(() => {
     if (!electricitySpecial) return DEFAULT_ELECTRICITY_RATE;
@@ -196,8 +207,8 @@ export function TenantInvoiceModal({
     event.preventDefault();
     setError(null);
 
-    if (!selectedMonth) {
-      setError("Select a billing month on the main page first.");
+    if (!billingMonthForCheck) {
+      setError("Set a billing date for this invoice.");
       return;
     }
 
@@ -221,13 +232,20 @@ export function TenantInvoiceModal({
 
     if (isDuplicate) {
       setError(
-        `A billing record for Room ${selectedTenant.Room} already exists for ${selectedMonthLabel}.`,
+        `A billing record for Room ${selectedTenant.Room} already exists for ${billingMonthLabel}.`,
       );
       return;
     }
 
+    const existingMonths = billingRows.map((row) => row.Month);
+    const monthForApi = resolveBillingMonthValue(
+      existingMonths,
+      billingMonthForCheck,
+      selectedMonth,
+    );
+
     mutation.mutate({
-      month: selectedMonth,
+      month: monthForApi,
       room: String(selectedTenant.Room),
       rent: readSheetNumber(baseRent),
       ePrev: readSheetNumber(elecPrev),
@@ -299,7 +317,7 @@ export function TenantInvoiceModal({
               role="alert"
             >
               ⚠️ Invoice Denied: A billing record for Room {selectedTenant.Room}{" "}
-              has already been generated for {selectedMonthLabel}.
+              has already been generated for {billingMonthLabel}.
             </div>
           )}
 

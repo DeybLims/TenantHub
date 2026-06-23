@@ -1,4 +1,8 @@
 import {
+  getMockExpenses,
+  normalizeExpenses,
+} from "@/lib/normalizeExpenses";
+import {
   getMockTenants,
   normalizeTenants,
 } from "@/lib/normalizeTenants";
@@ -6,14 +10,15 @@ import {
   isSheetRowArray,
   transformSheetToDashboard,
 } from "@/lib/transformSheetData";
-import type { GenerateBillPayload } from "@/types/billing";
+import type { GenerateBillPayload, UpdateBillPayload } from "@/types/billing";
 import type { DashboardData } from "@/types/dashboard";
+import type { SaveExpensePayload, ExpenseRecord } from "@/types/expense";
+import type { SaveTenantPayload, TenantRecord } from "@/types/tenant";
 import type { SheetRow } from "@/types/sheet";
-import type { TenantRecord } from "@/types/tenant";
 
 export const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
-  "https://script.google.com/macros/s/AKfycbz17asvx2Gnydy5pP3POrG72pI7lmPRoyvLrLoRxdE-sK6pMFEcu4bEV96IehqR3MEu/exec";
+  "https://script.google.com/macros/s/AKfycbz9Mw7VSa430fHvojOTJP_JZW5aU4XicYG1UJLH5H4hg_-ief3xStoAfespeZjwykVy/exec";
 
 /** Fetches billing data for the dashboard, optionally filtered by month. */
 export async function fetchBilling(month?: string): Promise<DashboardData> {
@@ -97,6 +102,28 @@ export function getMockBillingRows(): SheetRow[] {
 const USE_MOCK =
   process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
+/** Submits an updated bill to the Google Apps Script API. */
+export async function updateBill(data: UpdateBillPayload): Promise<void> {
+  const response = await fetch("/api/billing", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ action: "updateBill", data }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(
+      body?.error ??
+        `Failed to update bill: ${response.status} ${response.statusText}`,
+    );
+  }
+}
+
 /** Submits a new bill to the Google Apps Script API. */
 export async function generateBill(data: GenerateBillPayload): Promise<void> {
   const response = await fetch("/api/billing", {
@@ -152,6 +179,98 @@ export async function fetchTenants(): Promise<TenantRecord[]> {
 }
 
 export { getMockTenants };
+
+/** Saves a new tenant record to the Sheets API. */
+export async function saveTenant(data: SaveTenantPayload): Promise<void> {
+  const payload = {
+    action: "saveTenant" as const,
+    data: {
+      unitCode: data.unitCode,
+      room: data.room,
+      name: data.name,
+      rent: data.rent,
+      moveIn: data.moveIn,
+      deposit: data.deposit,
+    },
+  };
+
+  const response = await fetch("/api/tenants", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = (await response.json().catch(() => null)) as {
+    error?: string;
+    message?: string;
+    success?: boolean;
+  } | null;
+
+  if (!response.ok) {
+    throw new Error(
+      body?.error ??
+        body?.message ??
+        `Failed to save tenant: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  if (body?.success === false) {
+    throw new Error(body.message ?? "Failed to save tenant.");
+  }
+}
+
+/** Fetches expense records from the Sheets API. */
+export async function fetchExpenses(): Promise<ExpenseRecord[]> {
+  if (USE_MOCK) {
+    return getMockExpenses();
+  }
+
+  const response = await fetch("/api/expenses", {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(
+      body?.error ??
+        `Failed to fetch expenses: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const data: unknown = await response.json();
+  return normalizeExpenses(data);
+}
+
+/** Saves a new expense record to the Sheets API. */
+export async function saveExpense(data: SaveExpensePayload): Promise<void> {
+  const response = await fetch("/api/expenses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ action: "saveExpense", data }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(
+      body?.error ??
+        `Failed to save expense: ${response.status} ${response.statusText}`,
+    );
+  }
+}
+
+export { getMockExpenses };
 
 function normalizeDashboardData(
   data: unknown,

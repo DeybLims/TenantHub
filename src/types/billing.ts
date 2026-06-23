@@ -30,6 +30,44 @@ export interface GenerateBillPayload {
   adjustment: number;
 }
 
+export interface UpdateBillPayload {
+  month: string;
+  room: string;
+  rent: number;
+  ePrev: number;
+  eCurr: number;
+  eRate: number;
+  eBill: number;
+  wPrev: number;
+  wCurr: number;
+  wRate: number;
+  wBill: number;
+  adjustment: number;
+  totalDue: number;
+  paid: number;
+  status: string;
+  billingDate?: string;
+  dueDate?: string;
+  notes?: string;
+}
+
+export interface BillingDetailSaveData {
+  status: string;
+  billingDate: string;
+  dueDate: string;
+  baseRent: string;
+  elecBill: string;
+  elecPrev: string;
+  elecCurr: string;
+  waterBill: string;
+  waterPrev: string;
+  waterCurr: string;
+  otherCharges: string;
+  totalDue: string;
+  amountPaid: string;
+  notes: string;
+}
+
 export const WATER_RATE_OPTIONS = [
   { value: 30, label: "₱30.00 (Standard)" },
   { value: 45, label: "₱45.00 (Special)" },

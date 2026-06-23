@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AddTenantModal } from "@/components/tenants/AddTenantModal";
@@ -16,6 +16,7 @@ import {
   joinTenantsWithBilling,
   type TenantTableRow,
 } from "@/lib/joinTenantsBilling";
+import { getVacantRoomNumbers, hasVacantRoom } from "@/lib/tenantRooms";
 import {
   fetchBillingRows,
   fetchTenants,
@@ -26,6 +27,7 @@ import {
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
 export function TenantsPage() {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -50,6 +52,13 @@ export function TenantsPage() {
 
   const tenants = tenantsQuery.data;
   const billingRows = billingQuery.data;
+
+  const vacantRooms = useMemo(
+    () => (tenants ? getVacantRoomNumbers(tenants) : []),
+    [tenants],
+  );
+
+  const canAddTenant = tenants ? hasVacantRoom(tenants) : false;
 
   const monthOptions = useMemo(
     () => (billingRows ? getBillingMonthOptions(billingRows) : []),
@@ -147,7 +156,13 @@ export function TenantsPage() {
             <button
               type="button"
               onClick={() => setIsModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-blue-dark"
+              disabled={!canAddTenant || isLoading}
+              title={
+                canAddTenant
+                  ? undefined
+                  : "All 8 units are occupied. Remove a tenant first."
+              }
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" aria-hidden />
               Add New Tenant
@@ -204,7 +219,11 @@ export function TenantsPage() {
 
       <AddTenantModal
         open={isModalOpen}
+        vacantRooms={vacantRooms}
         onClose={() => setIsModalOpen(false)}
+        onSuccess={() => {
+          void queryClient.invalidateQueries({ queryKey: ["tenants"] });
+        }}
       />
     </AppShell>
   );

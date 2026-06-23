@@ -9,3 +9,12 @@ export interface TenantRecord {
 }
 
 export type TenantStatus = "Active" | "Vacant";
+
+export interface SaveTenantPayload {
+  unitCode: string;
+  room: string;
+  name: string;
+  rent: number;
+  moveIn: string;
+  deposit: number;
+}

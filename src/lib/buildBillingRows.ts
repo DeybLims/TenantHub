@@ -1,3 +1,4 @@
+import { billingMonthsMatch } from "@/lib/months";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import type { BillingTableRow } from "@/types/billing";
 import type { SheetRow } from "@/types/sheet";
@@ -19,7 +20,7 @@ export function buildBillingTableRows(
 
   const rowByRoom = new Map<number, SheetRow>();
   for (const row of billingRows) {
-    if (row.Month !== selectedMonth) continue;
+    if (!billingMonthsMatch(row.Month, selectedMonth)) continue;
     rowByRoom.set(readRoom(row.Room), row);
   }
 
@@ -57,7 +58,8 @@ export function findBillingSheetRow(
   month: string,
 ): SheetRow | undefined {
   const matches = billingRows.filter(
-    (row) => readRoom(row.Room) === room && row.Month === month,
+    (row) =>
+      readRoom(row.Room) === room && billingMonthsMatch(row.Month, month),
   );
   return matches.at(-1);
 }
@@ -69,6 +71,7 @@ export function hasBillForRoomMonth(
 ): boolean {
   if (!month) return false;
   return billingRows.some(
-    (row) => readRoom(row.Room) === room && row.Month === month,
+    (row) =>
+      readRoom(row.Room) === room && billingMonthsMatch(row.Month, month),
   );
 }

@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchFromSheets } from "@/lib/sheetsClient";
 
 const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
   "https://script.google.com/macros/s/AKfycbz9Mw7VSa430fHvojOTJP_JZW5aU4XicYG1UJLH5H4hg_-ief3xStoAfespeZjwykVy/exec";
+
+export async function GET() {
+  try {
+    const data = await fetchFromSheets("getExpenses");
+    return NextResponse.json(data);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch expenses";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

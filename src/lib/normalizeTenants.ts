@@ -87,6 +87,15 @@ export function getMockTenants(): TenantRecord[] {
       Status: "Active",
     },
     {
+      UnitCode: "",
+      Room: 5,
+      Name: "",
+      Rent: 0,
+      MoveIn: "",
+      Deposit: 0,
+      Status: "Vacant",
+    },
+    {
       UnitCode: "COM-201",
       Room: 7,
       Name: "Vacant Unit",

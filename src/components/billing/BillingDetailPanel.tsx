@@ -8,14 +8,16 @@ import {
   FloatingLabelField,
   floatingInputClass,
 } from "@/components/ui/FloatingLabelField";
-import type { BillingTableRow } from "@/types/billing";
+import type { BillingTableRow, BillingDetailSaveData } from "@/types/billing";
 import type { SheetRow } from "@/types/sheet";
 
 interface BillingDetailPanelProps {
   row: BillingTableRow;
   sheetRow: SheetRow | undefined;
-  onSave?: (data: Record<string, unknown>) => void;
+  onSave?: (data: BillingDetailSaveData) => void;
   onExportPdf?: () => void;
+  isSaving?: boolean;
+  saveError?: string | null;
 }
 
 function toDateInputValue(value: string | null | undefined): string {
@@ -30,6 +32,8 @@ export function BillingDetailPanel({
   sheetRow,
   onSave,
   onExportPdf,
+  isSaving = false,
+  saveError = null,
 }: BillingDetailPanelProps) {
   const [status, setStatus] = useState(row.status);
   const [billingDate, setBillingDate] = useState(
@@ -231,12 +235,19 @@ export function BillingDetailPanel({
               className={`${floatingInputClass} resize-none`}
             />
           </FloatingLabelField>
+
+          {saveError && (
+            <p className="text-sm text-red-600" role="alert">
+              {saveError}
+            </p>
+          )}
         </div>
       </div>
 
       <div className="flex gap-3 border-t border-gray-100 px-5 py-4">
         <button
           type="button"
+          disabled={isSaving}
           onClick={() =>
             onSave?.({
               status,
@@ -255,9 +266,9 @@ export function BillingDetailPanel({
               notes,
             })
           }
-          className="flex-1 rounded-lg bg-brand-blue py-2.5 text-sm font-semibold text-white hover:bg-brand-blue-dark"
+          className="flex-1 rounded-lg bg-brand-blue py-2.5 text-sm font-semibold text-white hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Save Changes
+          {isSaving ? "Saving…" : "Save Changes"}
         </button>
         <button
           type="button"

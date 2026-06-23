@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CloudDownload, FileText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { BillingDetailPanel } from "@/components/billing/BillingDetailPanel";
@@ -14,6 +14,7 @@ import {
   buildBillingTableRows,
   findBillingSheetRow,
 } from "@/lib/buildBillingRows";
+import { buildUpdateBillPayload } from "@/lib/buildUpdateBillPayload";
 import { computeBillingKpis } from "@/lib/billingSummary";
 import {
   getBillingMonthOptions,
@@ -24,8 +25,9 @@ import {
   fetchTenants,
   getMockBillingRows,
   getMockTenants,
+  updateBill,
 } from "@/services/api";
-import type { BillingTableRow } from "@/types/billing";
+import type { BillingDetailSaveData, BillingTableRow } from "@/types/billing";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
@@ -88,6 +90,21 @@ export function BillingPage() {
     );
   }, [selectedRowData, billingRows, selectedMonth]);
 
+  const saveBillMutation = useMutation({
+    mutationFn: ({
+      room,
+      data,
+    }: {
+      room: number;
+      data: BillingDetailSaveData;
+    }) =>
+      updateBill(buildUpdateBillPayload(selectedMonth, room, data)),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+
   useEffect(() => {
     if (
       selectedRow &&
@@ -104,6 +121,11 @@ export function BillingPage() {
   const handleBillGenerated = () => {
     void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  };
+
+  const handleSaveBill = (data: BillingDetailSaveData) => {
+    if (!selectedRowData || !selectedMonth) return;
+    saveBillMutation.mutate({ room: selectedRowData.room, data });
   };
 
   return (
@@ -188,10 +210,12 @@ export function BillingPage() {
             <BillingDetailPanel
               row={selectedRowData}
               sheetRow={selectedSheetRow}
-              onSave={() =>
-                window.alert(
-                  "Save Changes will connect to your Google Sheet API.",
-                )
+              onSave={handleSaveBill}
+              isSaving={saveBillMutation.isPending}
+              saveError={
+                saveBillMutation.error instanceof Error
+                  ? saveBillMutation.error.message
+                  : null
               }
               onExportPdf={() =>
                 window.alert("Export to PDF will connect to your API.")

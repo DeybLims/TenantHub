@@ -9,7 +9,7 @@ const navItems = [
   { label: "Dashboard", href: "/", icon: LayoutGrid },
   { label: "Tenants", href: "/tenants", icon: Users },
   { label: "Billing", href: "/billing", icon: FileText },
-  { label: "Expenses", href: "#", icon: Wallet },
+  { label: "Expenses", href: "/expenses", icon: Wallet },
 ];
 
 interface DashboardHeaderProps {

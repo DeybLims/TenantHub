@@ -12,6 +12,7 @@ import {
   getBillingStatusPillClass,
   normalizeBillingStatusLabel,
 } from "@/components/tenants/tenantStatusStyles";
+import { isVacantTenant } from "@/lib/tenantRooms";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import { getTenantInitials } from "@/lib/tenantInitials";
 import type { TenantTableRow } from "@/lib/joinTenantsBilling";
@@ -27,6 +28,9 @@ interface TenantDetailPanelProps {
   billing: SheetRow | undefined;
   selectedMonth: string;
   onClose: () => void;
+  onDelete?: () => void;
+  isDeleting?: boolean;
+  deleteError?: string | null;
 }
 
 function InfoTile({ label, value }: { label: string; value: ReactNode }) {
@@ -121,7 +125,11 @@ export function TenantDetailPanel({
   billing,
   selectedMonth,
   onClose,
+  onDelete,
+  isDeleting = false,
+  deleteError = null,
 }: TenantDetailPanelProps) {
+  const isVacant = isVacantTenant(tenant) || !tenant.Name.trim();
   const displayName = tenant.Name || "—";
   const monthLabel = formatMonthLabel(selectedMonth);
   const unitSubtitle = [
@@ -281,6 +289,27 @@ export function TenantDetailPanel({
           )}
         </section>
       </div>
+
+      {!isVacant && onDelete && (
+        <div className="border-t border-gray-100 px-5 py-4">
+          {deleteError && (
+            <p className="mb-3 text-sm text-red-600" role="alert">
+              {deleteError}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={isDeleting}
+            className="w-full rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isDeleting ? "Removing…" : "Delete Tenant"}
+          </button>
+          <p className="mt-2 text-center text-xs text-gray-500">
+            Clears this room and sets it back to Vacant.
+          </p>
+        </div>
+      )}
     </article>
   );
 }

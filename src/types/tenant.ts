@@ -10,7 +10,7 @@ export interface TenantRecord {
 
 export type TenantStatus = "Active" | "Vacant";
 
-export interface SaveTenantPayload {
+export interface AssignTenantPayload {
   unitCode: string;
   room: string;
   name: string;
@@ -18,3 +18,11 @@ export interface SaveTenantPayload {
   moveIn: string;
   deposit: number;
 }
+
+export interface DeleteTenantPayload {
+  room: string;
+  unitCode?: string;
+}
+
+/** @deprecated Use AssignTenantPayload */
+export type SaveTenantPayload = AssignTenantPayload;

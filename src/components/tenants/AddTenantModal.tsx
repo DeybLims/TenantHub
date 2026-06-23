@@ -2,10 +2,10 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { Calendar, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { readSheetNumber } from "@/lib/readSheetNumber";
-import { saveTenant } from "@/services/api";
-import type { SaveTenantPayload } from "@/types/tenant";
+import type { VacantTenantSlot } from "@/lib/tenantRooms";
+import { assignTenant } from "@/services/api";
 import {
   FloatingLabelField,
   floatingInputClass,
@@ -13,48 +13,43 @@ import {
 
 interface AddTenantModalProps {
   open: boolean;
-  vacantRooms: number[];
+  vacantSlots: VacantTenantSlot[];
   onClose: () => void;
   onSuccess: () => void;
 }
 
 export function AddTenantModal({
   open,
-  vacantRooms,
+  vacantSlots,
   onClose,
   onSuccess,
 }: AddTenantModalProps) {
-  const [unitCode, setUnitCode] = useState("");
-  const [room, setRoom] = useState("");
+  const [selectedRoom, setSelectedRoom] = useState("");
   const [tenantName, setTenantName] = useState("");
   const [baseRent, setBaseRent] = useState("");
   const [deposit, setDeposit] = useState("");
   const [moveInDate, setMoveInDate] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const hasVacancy = vacantRooms.length > 0;
-  const singleVacantRoom = vacantRooms.length === 1 ? vacantRooms[0] : null;
+  const hasVacancy = vacantSlots.length > 0;
+
+  const activeSlot = useMemo(() => {
+    const room = Number(selectedRoom);
+    return vacantSlots.find((slot) => slot.room === room) ?? vacantSlots[0];
+  }, [selectedRoom, vacantSlots]);
 
   useEffect(() => {
     if (!open) return;
-    setUnitCode("");
     setTenantName("");
     setBaseRent("");
     setDeposit("");
     setMoveInDate("");
     setError(null);
-    setRoom(singleVacantRoom != null ? String(singleVacantRoom) : "");
-  }, [open, singleVacantRoom]);
-
-  useEffect(() => {
-    if (!open || vacantRooms.length === 0) return;
-    if (!vacantRooms.includes(Number(room))) {
-      setRoom(String(vacantRooms[0]));
-    }
-  }, [open, vacantRooms, room]);
+    setSelectedRoom(vacantSlots[0] ? String(vacantSlots[0].room) : "");
+  }, [open, vacantSlots]);
 
   const mutation = useMutation({
-    mutationFn: (payload: SaveTenantPayload) => saveTenant(payload),
+    mutationFn: assignTenant,
     onSuccess: () => {
       onSuccess();
       onClose();
@@ -66,31 +61,24 @@ export function AddTenantModal({
     event.preventDefault();
     setError(null);
 
-    if (!hasVacancy) {
+    if (!hasVacancy || !activeSlot) {
       setError("All 8 units are occupied. Remove a tenant before adding a new one.");
       return;
     }
 
-    const trimmedUnit = unitCode.trim();
     const trimmedName = tenantName.trim();
-    const selectedRoom = Number(room);
-
-    if (!vacantRooms.includes(selectedRoom)) {
-      setError("Select a vacant room before saving.");
-      return;
-    }
-    if (!trimmedUnit) {
-      setError("Unit Code is required.");
-      return;
-    }
     if (!trimmedName) {
       setError("Tenant Name is required.");
       return;
     }
+    if (!moveInDate) {
+      setError("Move-in Date is required.");
+      return;
+    }
 
     mutation.mutate({
-      unitCode: trimmedUnit,
-      room: String(selectedRoom),
+      unitCode: activeSlot.unitCode,
+      room: String(activeSlot.room),
       name: trimmedName,
       rent: readSheetNumber(baseRent),
       deposit: readSheetNumber(deposit),
@@ -137,47 +125,68 @@ export function AddTenantModal({
             </div>
           ) : (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-              {vacantRooms.length === 1
-                ? `Assigning new tenant to vacant Room ${vacantRooms[0]}.`
-                : `${vacantRooms.length} vacant rooms available. Select one below.`}
+              {vacantSlots.length === 1 ? (
+                <p>
+                  Assigning to vacant{" "}
+                  <span className="font-semibold">
+                    Room {activeSlot?.room}
+                  </span>
+                  {activeSlot?.unitCode ? (
+                    <>
+                      {" "}
+                      · Unit <span className="font-semibold">{activeSlot.unitCode}</span>
+                    </>
+                  ) : null}
+                  . The existing vacant row will be updated and status set to
+                  Active — no new row is added.
+                </p>
+              ) : (
+                <p>
+                  Select a vacant unit below. The vacant row will be updated and
+                  status set to Active — no new row is added.
+                </p>
+              )}
             </div>
           )}
 
-          <FloatingLabelField label="Room">
-            {vacantRooms.length > 1 ? (
+          {vacantSlots.length > 1 && (
+            <FloatingLabelField label="Vacant Unit">
               <select
-                value={room}
-                onChange={(event) => setRoom(event.target.value)}
+                value={selectedRoom}
+                onChange={(event) => setSelectedRoom(event.target.value)}
                 disabled={!hasVacancy}
                 className={floatingInputClass}
               >
-                {vacantRooms.map((vacantRoom) => (
-                  <option key={vacantRoom} value={vacantRoom}>
-                    Room {vacantRoom}
+                {vacantSlots.map((slot) => (
+                  <option key={slot.room} value={slot.room}>
+                    Room {slot.room}
+                    {slot.unitCode ? ` · ${slot.unitCode}` : ""}
                   </option>
                 ))}
               </select>
-            ) : (
-              <input
-                type="text"
-                readOnly
-                value={hasVacancy ? `Room ${room}` : "No vacant rooms"}
-                className={`${floatingInputClass} cursor-not-allowed bg-gray-50`}
-              />
-            )}
-          </FloatingLabelField>
+            </FloatingLabelField>
+          )}
 
-          <FloatingLabelField label="Unit Code">
-            <input
-              type="text"
-              value={unitCode}
-              onChange={(event) => setUnitCode(event.target.value)}
-              placeholder="Value"
-              disabled={!hasVacancy}
-              className={floatingInputClass}
-              autoFocus
-            />
-          </FloatingLabelField>
+          {hasVacancy && activeSlot && vacantSlots.length === 1 && (
+            <div className="grid grid-cols-2 gap-3">
+              <FloatingLabelField label="Room">
+                <input
+                  type="text"
+                  readOnly
+                  value={`Room ${activeSlot.room}`}
+                  className={`${floatingInputClass} cursor-not-allowed bg-gray-50`}
+                />
+              </FloatingLabelField>
+              <FloatingLabelField label="Unit Code">
+                <input
+                  type="text"
+                  readOnly
+                  value={activeSlot.unitCode || "—"}
+                  className={`${floatingInputClass} cursor-not-allowed bg-gray-50`}
+                />
+              </FloatingLabelField>
+            </div>
+          )}
 
           <FloatingLabelField label="Tenant Name">
             <input
@@ -187,6 +196,7 @@ export function AddTenantModal({
               placeholder="Value"
               disabled={!hasVacancy}
               className={floatingInputClass}
+              autoFocus
             />
           </FloatingLabelField>
 

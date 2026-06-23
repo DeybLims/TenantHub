@@ -1,4 +1,5 @@
-import { formatMonthLabel, sortMonths } from "@/lib/months";
+import { billingMonthsMatch, formatMonthLabel, sortMonths } from "@/lib/months";
+import { buildTenantRowsForMonth } from "@/lib/tenantRooms";
 import type { MonthOption } from "@/types/dashboard";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
@@ -47,16 +48,20 @@ export function joinTenantsWithBilling(
   billing: SheetRow[],
   selectedMonth: string,
 ): TenantTableRow[] {
+  const roomTenants = buildTenantRowsForMonth(tenants, selectedMonth);
+
   if (!selectedMonth) {
-    return tenants.map((tenant) => ({
+    return roomTenants.map((tenant) => ({
       ...tenant,
       displayStatus: resolveTenantDisplayStatus(tenant, undefined),
     }));
   }
 
-  const monthBilling = billing.filter((row) => row.Month === selectedMonth);
+  const monthBilling = billing.filter((row) =>
+    billingMonthsMatch(row.Month, selectedMonth),
+  );
 
-  return tenants.map((tenant) => {
+  return roomTenants.map((tenant) => {
     const billingRow = monthBilling.find(
       (row) => readRoom(row.Room) === tenant.Room,
     );
@@ -88,6 +93,6 @@ export function findTenantBillingRow(
 ): SheetRow | undefined {
   if (!month) return undefined;
   return billing.find(
-    (row) => readRoom(row.Room) === room && row.Month === month,
+    (row) => readRoom(row.Room) === room && billingMonthsMatch(row.Month, month),
   );
 }

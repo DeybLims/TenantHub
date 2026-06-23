@@ -13,12 +13,12 @@ import {
 import type { GenerateBillPayload, UpdateBillPayload } from "@/types/billing";
 import type { DashboardData } from "@/types/dashboard";
 import type { SaveExpensePayload, ExpenseRecord } from "@/types/expense";
-import type { SaveTenantPayload, TenantRecord } from "@/types/tenant";
+import type { AssignTenantPayload, DeleteTenantPayload, TenantRecord } from "@/types/tenant";
 import type { SheetRow } from "@/types/sheet";
 
 export const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
-  "https://script.google.com/macros/s/AKfycbz9Mw7VSa430fHvojOTJP_JZW5aU4XicYG1UJLH5H4hg_-ief3xStoAfespeZjwykVy/exec";
+  "https://script.google.com/macros/s/AKfycbz8H1VJGEPc3KOdNJ8Kn_OcT34MlXddi2axbUjLY9EeZgEHqlbsrThwdX1EAfqBCxep/exec";
 
 /** Fetches billing data for the dashboard, optionally filtered by month. */
 export async function fetchBilling(month?: string): Promise<DashboardData> {
@@ -180,8 +180,8 @@ export async function fetchTenants(): Promise<TenantRecord[]> {
 
 export { getMockTenants };
 
-/** Saves a new tenant record to the Sheets API. */
-export async function saveTenant(data: SaveTenantPayload): Promise<void> {
+/** Assigns a tenant to an existing vacant row in the Tenants sheet. */
+export async function assignTenant(data: AssignTenantPayload): Promise<void> {
   const payload = {
     action: "saveTenant" as const,
     data: {
@@ -191,6 +191,9 @@ export async function saveTenant(data: SaveTenantPayload): Promise<void> {
       rent: data.rent,
       moveIn: data.moveIn,
       deposit: data.deposit,
+      // Always flip Vacant → Active when assigning a new tenant.
+      status: "Active",
+      Status: "Active",
     },
   };
 
@@ -213,12 +216,55 @@ export async function saveTenant(data: SaveTenantPayload): Promise<void> {
     throw new Error(
       body?.error ??
         body?.message ??
-        `Failed to save tenant: ${response.status} ${response.statusText}`,
+        `Failed to assign tenant: ${response.status} ${response.statusText}`,
     );
   }
 
   if (body?.success === false) {
-    throw new Error(body.message ?? "Failed to save tenant.");
+    throw new Error(body.message ?? "Failed to assign tenant.");
+  }
+}
+
+/** @deprecated Use assignTenant — updates vacant row instead of appending. */
+export async function saveTenant(data: AssignTenantPayload): Promise<void> {
+  return assignTenant(data);
+}
+
+/** Clears a tenant from their room and sets the row back to Vacant. */
+export async function deleteTenant(data: DeleteTenantPayload): Promise<void> {
+  const payload = {
+    action: "deleteTenant" as const,
+    data: {
+      room: data.room,
+      unitCode: data.unitCode ?? "",
+    },
+  };
+
+  const response = await fetch("/api/tenants", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = (await response.json().catch(() => null)) as {
+    error?: string;
+    message?: string;
+    success?: boolean;
+  } | null;
+
+  if (!response.ok) {
+    throw new Error(
+      body?.error ??
+        body?.message ??
+        `Failed to delete tenant: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  if (body?.success === false) {
+    throw new Error(body.message ?? "Failed to delete tenant.");
   }
 }
 

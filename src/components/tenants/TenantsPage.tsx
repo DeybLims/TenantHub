@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AddTenantModal } from "@/components/tenants/AddTenantModal";
@@ -16,13 +16,15 @@ import {
   joinTenantsWithBilling,
   type TenantTableRow,
 } from "@/lib/joinTenantsBilling";
-import { getVacantRoomNumbers, hasVacantRoom } from "@/lib/tenantRooms";
+import { getVacantTenantSlots, hasVacantRoom } from "@/lib/tenantRooms";
 import {
+  deleteTenant,
   fetchBillingRows,
   fetchTenants,
   getMockBillingRows,
   getMockTenants,
 } from "@/services/api";
+import { isVacantTenant } from "@/lib/tenantRooms";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
@@ -53,8 +55,8 @@ export function TenantsPage() {
   const tenants = tenantsQuery.data;
   const billingRows = billingQuery.data;
 
-  const vacantRooms = useMemo(
-    () => (tenants ? getVacantRoomNumbers(tenants) : []),
+  const vacantSlots = useMemo(
+    () => (tenants ? getVacantTenantSlots(tenants) : []),
     [tenants],
   );
 
@@ -120,6 +122,28 @@ export function TenantsPage() {
 
   const handleSelectTenant = (tenant: TenantTableRow) => {
     setSelectedTenant(tenant);
+  };
+
+  const deleteTenantMutation = useMutation({
+    mutationFn: deleteTenant,
+    onSuccess: () => {
+      setSelectedTenant(null);
+      void queryClient.invalidateQueries({ queryKey: ["tenants"] });
+    },
+  });
+
+  const handleDeleteTenant = () => {
+    if (!selectedTenantRow || isVacantTenant(selectedTenantRow)) return;
+
+    const confirmed = window.confirm(
+      `Remove ${selectedTenantRow.Name} from Room ${selectedTenantRow.Room}? This unit will be set back to Vacant.`,
+    );
+    if (!confirmed) return;
+
+    deleteTenantMutation.mutate({
+      room: String(selectedTenantRow.Room),
+      unitCode: selectedTenantRow.UnitCode,
+    });
   };
 
   return (
@@ -207,6 +231,13 @@ export function TenantsPage() {
                     billing={selectedBilling}
                     selectedMonth={selectedMonth}
                     onClose={() => setSelectedTenant(null)}
+                    onDelete={handleDeleteTenant}
+                    isDeleting={deleteTenantMutation.isPending}
+                    deleteError={
+                      deleteTenantMutation.error instanceof Error
+                        ? deleteTenantMutation.error.message
+                        : null
+                    }
                   />
                 ) : (
                   <TenantDetailPlaceholder />
@@ -219,7 +250,7 @@ export function TenantsPage() {
 
       <AddTenantModal
         open={isModalOpen}
-        vacantRooms={vacantRooms}
+        vacantSlots={vacantSlots}
         onClose={() => setIsModalOpen(false)}
         onSuccess={() => {
           void queryClient.invalidateQueries({ queryKey: ["tenants"] });

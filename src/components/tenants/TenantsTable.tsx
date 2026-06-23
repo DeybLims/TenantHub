@@ -39,7 +39,7 @@ export function TenantsTable({
 
             return (
               <tr
-                key={`${tenant.UnitCode}-${tenant.Room}-${tenant.Name}`}
+                key={`room-${tenant.Room}`}
                 onClick={() => onSelectTenant(tenant)}
                 className={`cursor-pointer border-b border-gray-50 transition-colors last:border-0 hover:bg-slate-50 ${
                   isSelected ? "bg-slate-50" : ""

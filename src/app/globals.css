@@ -4,7 +4,28 @@
 
 @layer base {
   body {
-    @apply bg-surface text-navy antialiased;
+    @apply bg-slate-50 text-navy antialiased;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #tenant-export-print-root,
+  #tenant-export-print-root *,
+  #billing-export-print-root,
+  #billing-export-print-root * {
+    visibility: visible;
+  }
+
+  #tenant-export-print-root,
+  #billing-export-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
   }
 }
 

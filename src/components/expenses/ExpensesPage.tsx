@@ -1,17 +1,22 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { CloudDownload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { MonthSelect } from "@/components/dashboard/MonthSelect";
-import { UtilityAnalyticsPanel } from "@/components/expenses/UtilityAnalyticsPanel";
-import { UtilityDistributionForm } from "@/components/expenses/UtilityDistributionForm";
+import { CalculatedAnalytics } from "@/components/expenses/CalculatedAnalytics";
+import { ExpenseForm } from "@/components/expenses/ExpenseForm";
 import { AppShell } from "@/components/layout/AppShell";
+import { useUtilityExpenseAnalytics } from "@/hooks/useUtilityExpenseAnalytics";
 import {
   getBillingMonthOptions,
   getDefaultBillingMonth,
 } from "@/lib/joinTenantsBilling";
-import { computeUtilityDistribution } from "@/lib/utilityDistributionSummary";
-import { fetchBillingRows, getMockBillingRows } from "@/services/api";
+import {
+  fetchBillingRows,
+  fetchTenants,
+  getMockBillingRows,
+  getMockTenants,
+} from "@/services/api";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
@@ -24,10 +29,18 @@ export function ExpensesPage() {
       USE_MOCK ? Promise.resolve(getMockBillingRows()) : fetchBillingRows(),
   });
 
+  const tenantsQuery = useQuery({
+    queryKey: ["tenants"],
+    queryFn: () =>
+      USE_MOCK ? Promise.resolve(getMockTenants()) : fetchTenants(),
+  });
+
   const billingRows = useMemo(
     () => billingQuery.data ?? [],
     [billingQuery.data],
   );
+
+  const tenants = useMemo(() => tenantsQuery.data ?? [], [tenantsQuery.data]);
 
   const monthOptions = useMemo(
     () => getBillingMonthOptions(billingRows),
@@ -39,14 +52,23 @@ export function ExpensesPage() {
     setSelectedMonth(getDefaultBillingMonth(billingRows));
   }, [billingRows, selectedMonth]);
 
-  const summary = useMemo(
-    () => computeUtilityDistribution(billingRows, selectedMonth),
-    [billingRows, selectedMonth],
-  );
+  const {
+    record,
+    analytics,
+    derived,
+    updateRecord,
+    save,
+    cancel,
+    isDirty,
+  } = useUtilityExpenseAnalytics({
+    selectedMonth,
+    billingRows,
+    tenants,
+  });
 
-  const isLoading = billingQuery.isLoading;
-  const isError = billingQuery.isError;
-  const error = billingQuery.error;
+  const isLoading = billingQuery.isLoading || tenantsQuery.isLoading;
+  const isError = billingQuery.isError || tenantsQuery.isError;
+  const error = billingQuery.error ?? tenantsQuery.error;
 
   return (
     <AppShell>
@@ -55,39 +77,49 @@ export function ExpensesPage() {
           Utility Expenses & Distribution
         </h1>
 
-        <MonthSelect
-          months={monthOptions}
-          value={selectedMonth}
-          onChange={setSelectedMonth}
-          disabled={isLoading || monthOptions.length === 0}
-        />
+        <button
+          type="button"
+          onClick={() => window.print()}
+          disabled={!analytics}
+          className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <CloudDownload className="h-4 w-4" aria-hidden />
+          Download Report
+        </button>
       </div>
 
       {isLoading && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5" aria-hidden>
-          <div className="h-[640px] animate-pulse rounded-xl bg-gray-100 lg:col-span-3" />
-          <div className="h-[640px] animate-pulse rounded-xl bg-gray-100 lg:col-span-2" />
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2" aria-hidden>
+          <div className="h-[720px] animate-pulse rounded-xl bg-gray-100" />
+          <div className="h-[720px] animate-pulse rounded-xl bg-gray-100" />
         </div>
       )}
 
       {isError && (
-        <p className="py-8 text-center text-sm text-red-600">
+        <p className="py-8 text-center text-sm text-red-500">
           {error instanceof Error
             ? error.message
-            : "Failed to load utility data from billing"}
+            : "Failed to load utility data"}
         </p>
       )}
 
-      {!isLoading && !isError && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:items-start">
-          <div className="lg:col-span-3">
-            <UtilityDistributionForm
-              summary={summary}
+      {!isLoading && !isError && analytics && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+            <ExpenseForm
+              record={record}
               selectedMonth={selectedMonth}
+              monthOptions={monthOptions}
+              derived={derived}
+              onRecordChange={updateRecord}
+              onMonthChange={setSelectedMonth}
+              onCancel={cancel}
+              onSave={save}
+              onExportPdf={() => window.print()}
+              isDirty={isDirty}
             />
-          </div>
-          <div className="lg:col-span-2">
-            <UtilityAnalyticsPanel summary={summary} />
+
+            <CalculatedAnalytics analytics={analytics} />
           </div>
         </div>
       )}

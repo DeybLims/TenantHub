@@ -6,10 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import type { VacantTenantSlot } from "@/lib/tenantRooms";
 import { assignTenant } from "@/services/api";
-import {
-  FloatingLabelField,
-  floatingInputClass,
-} from "@/components/ui/FloatingLabelField";
+import type { AddTenantFormData } from "@/components/tenants/types";
 
 interface AddTenantModalProps {
   open: boolean;
@@ -18,6 +15,28 @@ interface AddTenantModalProps {
   onSuccess: () => void;
 }
 
+const inputClass =
+  "w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-navy placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
+
+function FieldLabel({ children }: { children: string }) {
+  return (
+    <label className="mb-1 block text-xs font-medium text-gray-500">
+      {children}
+    </label>
+  );
+}
+
+const emptyForm = (): AddTenantFormData => ({
+  unitCode: "",
+  name: "",
+  contactNumber: "",
+  email: "",
+  leaseStart: "",
+  moveInDate: "",
+  baseRent: "",
+  deposit: "",
+});
+
 export function AddTenantModal({
   open,
   vacantSlots,
@@ -25,10 +44,7 @@ export function AddTenantModal({
   onSuccess,
 }: AddTenantModalProps) {
   const [selectedRoom, setSelectedRoom] = useState("");
-  const [tenantName, setTenantName] = useState("");
-  const [baseRent, setBaseRent] = useState("");
-  const [deposit, setDeposit] = useState("");
-  const [moveInDate, setMoveInDate] = useState("");
+  const [form, setForm] = useState<AddTenantFormData>(emptyForm);
   const [error, setError] = useState<string | null>(null);
 
   const hasVacancy = vacantSlots.length > 0;
@@ -40,13 +56,18 @@ export function AddTenantModal({
 
   useEffect(() => {
     if (!open) return;
-    setTenantName("");
-    setBaseRent("");
-    setDeposit("");
-    setMoveInDate("");
+    setForm(emptyForm());
     setError(null);
     setSelectedRoom(vacantSlots[0] ? String(vacantSlots[0].room) : "");
   }, [open, vacantSlots]);
+
+  useEffect(() => {
+    if (!open || !activeSlot) return;
+    setForm((current) => ({
+      ...current,
+      unitCode: activeSlot.unitCode || current.unitCode,
+    }));
+  }, [open, activeSlot]);
 
   const mutation = useMutation({
     mutationFn: assignTenant,
@@ -57,32 +78,44 @@ export function AddTenantModal({
     onError: (err: Error) => setError(err.message),
   });
 
+  const updateField = <K extends keyof AddTenantFormData>(
+    key: K,
+    value: AddTenantFormData[K],
+  ) => {
+    setForm((current) => ({ ...current, [key]: value }));
+  };
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
 
     if (!hasVacancy || !activeSlot) {
-      setError("All 8 units are occupied. Remove a tenant before adding a new one.");
+      setError(
+        "All 8 units are occupied. Remove a tenant before adding a new one.",
+      );
       return;
     }
 
-    const trimmedName = tenantName.trim();
+    const trimmedName = form.name.trim();
     if (!trimmedName) {
       setError("Tenant Name is required.");
       return;
     }
-    if (!moveInDate) {
+    if (!form.moveInDate) {
       setError("Move-in Date is required.");
       return;
     }
 
     mutation.mutate({
-      unitCode: activeSlot.unitCode,
+      unitCode: form.unitCode.trim() || activeSlot.unitCode,
       room: String(activeSlot.room),
       name: trimmedName,
-      rent: readSheetNumber(baseRent),
-      deposit: readSheetNumber(deposit),
-      moveIn: moveInDate,
+      contactNumber: form.contactNumber.trim(),
+      emailAddress: form.email.trim(),
+      leaseStart: form.leaseStart || form.moveInDate,
+      rent: readSheetNumber(form.baseRent),
+      deposit: readSheetNumber(form.deposit),
+      moveIn: form.moveInDate,
     });
   };
 
@@ -90,18 +123,18 @@ export function AddTenantModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-navy/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-tenant-title"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-xl bg-white shadow-card"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-card"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 id="add-tenant-title" className="text-lg font-semibold text-navy">
+          <h2 id="add-tenant-title" className="text-lg font-bold text-navy">
             Add New Tenant
           </h2>
           <button
@@ -120,42 +153,16 @@ export function AddTenantModal({
               className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
               role="alert"
             >
-              All 8 rental units are currently occupied. Remove a tenant from an
-              existing room before adding a new one.
+              All 8 rental units are currently occupied. Remove a tenant before
+              adding a new one.
             </div>
-          ) : (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-              {vacantSlots.length === 1 ? (
-                <p>
-                  Assigning to vacant{" "}
-                  <span className="font-semibold">
-                    Room {activeSlot?.room}
-                  </span>
-                  {activeSlot?.unitCode ? (
-                    <>
-                      {" "}
-                      · Unit <span className="font-semibold">{activeSlot.unitCode}</span>
-                    </>
-                  ) : null}
-                  . The existing vacant row will be updated and status set to
-                  Active — no new row is added.
-                </p>
-              ) : (
-                <p>
-                  Select a vacant unit below. The vacant row will be updated and
-                  status set to Active — no new row is added.
-                </p>
-              )}
-            </div>
-          )}
-
-          {vacantSlots.length > 1 && (
-            <FloatingLabelField label="Vacant Unit">
+          ) : vacantSlots.length > 1 ? (
+            <div>
+              <FieldLabel>Vacant Unit</FieldLabel>
               <select
                 value={selectedRoom}
                 onChange={(event) => setSelectedRoom(event.target.value)}
-                disabled={!hasVacancy}
-                className={floatingInputClass}
+                className={inputClass}
               >
                 {vacantSlots.map((slot) => (
                   <option key={slot.room} value={slot.room}>
@@ -164,86 +171,134 @@ export function AddTenantModal({
                   </option>
                 ))}
               </select>
-            </FloatingLabelField>
-          )}
-
-          {hasVacancy && activeSlot && vacantSlots.length === 1 && (
-            <div className="grid grid-cols-2 gap-3">
-              <FloatingLabelField label="Room">
-                <input
-                  type="text"
-                  readOnly
-                  value={`Room ${activeSlot.room}`}
-                  className={`${floatingInputClass} cursor-not-allowed bg-gray-50`}
-                />
-              </FloatingLabelField>
-              <FloatingLabelField label="Unit Code">
-                <input
-                  type="text"
-                  readOnly
-                  value={activeSlot.unitCode || "—"}
-                  className={`${floatingInputClass} cursor-not-allowed bg-gray-50`}
-                />
-              </FloatingLabelField>
             </div>
-          )}
+          ) : null}
 
-          <FloatingLabelField label="Tenant Name">
-            <input
-              type="text"
-              value={tenantName}
-              onChange={(event) => setTenantName(event.target.value)}
-              placeholder="Value"
-              disabled={!hasVacancy}
-              className={floatingInputClass}
-              autoFocus
-            />
-          </FloatingLabelField>
-
-          <FloatingLabelField label="Base Rent">
-            <input
-              type="number"
-              min={0}
-              step="any"
-              value={baseRent}
-              onChange={(event) => setBaseRent(event.target.value)}
-              placeholder="Value"
-              disabled={!hasVacancy}
-              className={floatingInputClass}
-            />
-          </FloatingLabelField>
-
-          <FloatingLabelField label="Deposit">
-            <input
-              type="number"
-              min={0}
-              step="any"
-              value={deposit}
-              onChange={(event) => setDeposit(event.target.value)}
-              placeholder="Value"
-              disabled={!hasVacancy}
-              className={floatingInputClass}
-            />
-          </FloatingLabelField>
-
-          <FloatingLabelField label="Move-in Date">
-            <div className="relative">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <FieldLabel>Unit Code</FieldLabel>
               <input
-                type="date"
-                value={moveInDate}
-                onChange={(event) => setMoveInDate(event.target.value)}
+                type="text"
+                value={form.unitCode}
+                onChange={(event) => updateField("unitCode", event.target.value)}
+                placeholder="APT-101"
                 disabled={!hasVacancy}
-                className={`${floatingInputClass} pr-10`}
-              />
-              <Calendar
-                className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                aria-hidden
+                className={inputClass}
               />
             </div>
-          </FloatingLabelField>
+            <div>
+              <FieldLabel>Tenant Name</FieldLabel>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(event) => updateField("name", event.target.value)}
+                placeholder="Joel"
+                disabled={!hasVacancy}
+                className={inputClass}
+                autoFocus
+              />
+            </div>
+            <div>
+              <FieldLabel>Contact Number</FieldLabel>
+              <input
+                type="text"
+                value={form.contactNumber}
+                onChange={(event) =>
+                  updateField("contactNumber", event.target.value)
+                }
+                placeholder="09 12 345 6789"
+                disabled={!hasVacancy}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <FieldLabel>Email Address</FieldLabel>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(event) => updateField("email", event.target.value)}
+                placeholder="joel@gmail.com"
+                disabled={!hasVacancy}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <FieldLabel>Lease Start</FieldLabel>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={form.leaseStart}
+                  onChange={(event) =>
+                    updateField("leaseStart", event.target.value)
+                  }
+                  disabled={!hasVacancy}
+                  className={`${inputClass} pr-10`}
+                />
+                <Calendar
+                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                  aria-hidden
+                />
+              </div>
+            </div>
+            <div>
+              <FieldLabel>Move-in Date</FieldLabel>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={form.moveInDate}
+                  onChange={(event) =>
+                    updateField("moveInDate", event.target.value)
+                  }
+                  disabled={!hasVacancy}
+                  required
+                  className={`${inputClass} pr-10`}
+                />
+                <Calendar
+                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                  aria-hidden
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel>Base Rent</FieldLabel>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                ₱
+              </span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={form.baseRent}
+                onChange={(event) => updateField("baseRent", event.target.value)}
+                placeholder="10,000.00"
+                disabled={!hasVacancy}
+                className={`${inputClass} pl-8`}
+              />
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel>Deposit</FieldLabel>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                ₱
+              </span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={form.deposit}
+                onChange={(event) => updateField("deposit", event.target.value)}
+                placeholder="10,000.00"
+                disabled={!hasVacancy}
+                className={`${inputClass} pl-8`}
+              />
+            </div>
+          </div>
 
           {error && (
-            <p className="text-sm text-red-600" role="alert">
+            <p className="text-sm text-red-500" role="alert">
               {error}
             </p>
           )}
@@ -253,14 +308,14 @@ export function AddTenantModal({
               type="button"
               onClick={onClose}
               disabled={mutation.isPending}
-              className="rounded-lg bg-brand-coral px-5 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60"
+              className="rounded-lg bg-red-500 px-5 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={mutation.isPending || !hasVacancy}
-              className="rounded-lg bg-brand-blue px-5 py-2 text-sm font-semibold text-white hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg bg-blue-500 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {mutation.isPending ? "Saving…" : "Save Tenant"}
             </button>

@@ -1,6 +1,7 @@
 "use client";
 
-import { formatPeso, formatPesoDecimal } from "@/lib/format";
+import { formatPesoDecimal } from "@/lib/format";
+import { formatMonthLabel } from "@/lib/months";
 import {
   getBillingTableStatusClass,
   getBillingTableStatusLabel,
@@ -21,29 +22,26 @@ export function BillingTable({
   if (rows.length === 0) {
     return (
       <p className="py-12 text-center text-sm text-gray-500">
-        No billing records for this month.
+        No billing records for the selected period.
       </p>
     );
   }
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[880px] text-left text-sm">
+      <table className="w-full min-w-[760px] text-left text-sm">
         <thead>
-          <tr className="border-b border-gray-100">
-            <th className="pb-3 pr-4 font-medium text-gray-500">
+          <tr className="border-b border-gray-200">
+            <th className="px-5 py-3.5 font-semibold text-navy">
               Unit Code / Tenant
             </th>
-            <th className="pb-3 pr-4 font-medium text-gray-500">Base Rent</th>
-            <th className="pb-3 pr-4 font-medium text-gray-500">Electricity</th>
-            <th className="pb-3 pr-4 font-medium text-gray-500">Water</th>
-            <th className="pb-3 pr-4 font-medium text-gray-500">
-              Other Charges
+            <th className="px-4 py-3.5 font-semibold text-navy">
+              Billing Period
             </th>
-            <th className="pb-3 pr-4 font-medium text-gray-500">Total Due</th>
-            <th className="pb-3 text-center font-medium text-gray-500">
-              Status
-            </th>
+            <th className="px-4 py-3.5 font-semibold text-navy">Amount Due</th>
+            <th className="px-4 py-3.5 font-semibold text-navy">Paid</th>
+            <th className="px-4 py-3.5 font-semibold text-navy">Balance</th>
+            <th className="px-5 py-3.5 font-semibold text-navy">Status</th>
           </tr>
         </thead>
         <tbody>
@@ -57,52 +55,34 @@ export function BillingTable({
               <tr
                 key={rowKey}
                 onClick={() => onSelectRow(row)}
-                className={`cursor-pointer border-b border-gray-50 transition-colors last:border-0 hover:bg-slate-50 ${
-                  isSelected ? "bg-slate-50" : ""
+                className={`cursor-pointer border-b border-gray-100 transition-colors last:border-0 hover:bg-slate-50/80 ${
+                  isSelected ? "bg-slate-50" : "bg-white"
                 }`}
               >
-                <td className="py-4 pr-4">
-                  <p className="font-bold text-navy">{row.unitCode}</p>
-                  <p className="mt-0.5 text-xs text-gray-500">{row.tenantName}</p>
+                <td className="px-5 py-3.5">
+                  <p className="font-semibold text-navy">{row.unitCode}</p>
+                  <p className="mt-0.5 text-gray-500">{row.tenantName}</p>
                 </td>
-                <td className="py-4 pr-4">
-                  <span className="inline-flex rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-navy">
-                    {formatPeso(row.rent)}
-                  </span>
+                <td className="px-4 py-3.5 text-gray-600">
+                  {formatMonthLabel(row.month)}
                 </td>
-                <td className="py-4 pr-4">
-                  <p className="font-semibold text-navy">
-                    {formatPesoDecimal(row.elecBill)}
-                  </p>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    Prev: {row.elecPrev.toLocaleString("en-PH")} | Curr:{" "}
-                    {row.elecCurr.toLocaleString("en-PH")}
-                  </p>
+                <td className="px-4 py-3.5 font-medium text-navy">
+                  {formatPesoDecimal(row.totalDue)}
                 </td>
-                <td className="py-4 pr-4">
-                  <p className="font-semibold text-navy">
-                    {formatPesoDecimal(row.waterBill)}
-                  </p>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    Prev: {row.waterPrev.toLocaleString("en-PH")} | Curr:{" "}
-                    {row.waterCurr.toLocaleString("en-PH")}
-                  </p>
+                <td className="px-4 py-3.5 font-medium text-emerald-600">
+                  {formatPesoDecimal(row.paid)}
                 </td>
-                <td className="py-4 pr-4 text-gray-700">
-                  {formatPesoDecimal(row.otherCharges)}
+                <td
+                  className={`px-4 py-3.5 font-medium ${
+                    row.balance > 0 ? "text-red-500" : "text-gray-600"
+                  }`}
+                >
+                  {formatPesoDecimal(row.balance)}
                 </td>
-                <td className="py-4 pr-4">
-                  <span className="font-bold text-navy">
-                    {formatPesoDecimal(row.totalDue)}
-                  </span>
-                </td>
-                <td className="py-4 text-center">
+                <td className="px-5 py-3.5">
                   <span className={getBillingTableStatusClass(row.status)}>
                     {getBillingTableStatusLabel(row.status)}
                   </span>
-                  <p className="mt-1.5 text-xs text-gray-500">
-                    Balance: {formatPesoDecimal(row.balance)}
-                  </p>
                 </td>
               </tr>
             );

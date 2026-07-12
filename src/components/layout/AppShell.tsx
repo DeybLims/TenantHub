@@ -20,7 +20,7 @@ export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen bg-surface">
+    <div className="min-h-screen bg-slate-50">
       <div className="bg-gradient-to-r from-brand-blue to-brand-blue-dark">
         <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-3 sm:px-6">
           <KeyRound className="h-6 w-6 text-white" aria-hidden />

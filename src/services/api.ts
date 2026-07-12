@@ -13,7 +13,12 @@ import {
 import type { GenerateBillPayload, UpdateBillPayload } from "@/types/billing";
 import type { DashboardData } from "@/types/dashboard";
 import type { SaveExpensePayload, ExpenseRecord } from "@/types/expense";
-import type { AssignTenantPayload, DeleteTenantPayload, TenantRecord } from "@/types/tenant";
+import type {
+  AssignTenantPayload,
+  DeleteTenantPayload,
+  TenantRecord,
+  UpdateTenantProfilePayload,
+} from "@/types/tenant";
 import type { SheetRow } from "@/types/sheet";
 
 export const GOOGLE_APPS_SCRIPT_URL =
@@ -188,10 +193,12 @@ export async function assignTenant(data: AssignTenantPayload): Promise<void> {
       unitCode: data.unitCode,
       room: data.room,
       name: data.name,
+      contactNumber: data.contactNumber ?? "",
+      emailAddress: data.emailAddress ?? "",
+      leaseStart: data.leaseStart ?? data.moveIn,
       rent: data.rent,
       moveIn: data.moveIn,
       deposit: data.deposit,
-      // Always flip Vacant → Active when assigning a new tenant.
       status: "Active",
       Status: "Active",
     },
@@ -228,6 +235,58 @@ export async function assignTenant(data: AssignTenantPayload): Promise<void> {
 /** @deprecated Use assignTenant — updates vacant row instead of appending. */
 export async function saveTenant(data: AssignTenantPayload): Promise<void> {
   return assignTenant(data);
+}
+
+/** Updates an active tenant profile in the Tenants sheet. */
+export async function updateTenantProfile(
+  data: UpdateTenantProfilePayload,
+): Promise<void> {
+  const payload = {
+    action: "saveTenant" as const,
+    data: {
+      unitCode: data.unitCode,
+      room: data.room,
+      name: data.name,
+      contactNumber: data.contactNumber,
+      emailAddress: data.emailAddress,
+      emergencyContact: data.emergencyContact,
+      emergencyNumber: data.emergencyNumber,
+      leaseStart: data.leaseStart,
+      moveIn: data.moveIn,
+      rent: data.rent,
+      deposit: data.deposit,
+      notes: data.notes,
+      status: "Active",
+      Status: "Active",
+    },
+  };
+
+  const response = await fetch("/api/tenants", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = (await response.json().catch(() => null)) as {
+    error?: string;
+    message?: string;
+    success?: boolean;
+  } | null;
+
+  if (!response.ok) {
+    throw new Error(
+      body?.error ??
+        body?.message ??
+        `Failed to update tenant: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  if (body?.success === false) {
+    throw new Error(body.message ?? "Failed to update tenant.");
+  }
 }
 
 /** Clears a tenant from their room and sets the row back to Vacant. */

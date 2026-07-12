@@ -1,11 +1,11 @@
 import type { TenantDisplayStatus } from "@/lib/joinTenantsBilling";
 
 export const tenantDisplayStatusStyles: Record<TenantDisplayStatus, string> = {
-  Vacant: "bg-gray-100 text-gray-700",
-  Paid: "bg-emerald-100 text-emerald-800",
-  Unpaid: "bg-red-100 text-red-800",
-  Partial: "bg-orange-100 text-orange-800",
-  "No Bill": "bg-blue-100 text-blue-800",
+  Vacant: "bg-gray-400 text-white",
+  Paid: "bg-emerald-400 text-white",
+  Unpaid: "bg-red-500 text-white",
+  Partial: "bg-orange-500 text-white",
+  "No Bill": "bg-red-500 text-white",
 };
 
 export type BillingStatusLabel = "Paid" | "Unpaid" | "Partial" | "Vacant";

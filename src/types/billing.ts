@@ -1,3 +1,47 @@
+export type BillPaymentStatus = "Paid" | "Unpaid" | "Partial";
+
+export interface UtilityReading {
+  amount: number;
+  previous: number;
+  current: number;
+  specialRate?: boolean;
+}
+
+export interface Bill {
+  id: string;
+  room: number;
+  unitCode: string;
+  tenantName: string;
+  billingPeriod: string;
+  billingMonth: string;
+  billingDate: string;
+  dueDate: string;
+  baseRent: number;
+  electricity: UtilityReading;
+  water: UtilityReading;
+  otherCharges: number;
+  totalDue: number;
+  amountPaid: number;
+  balance: number;
+  status: BillPaymentStatus;
+  notes?: string;
+}
+
+export interface BillingPeriodSummary {
+  amountDue: number;
+  paid: number;
+  balance: number;
+  status: BillPaymentStatus;
+}
+
+export interface BillingDashboardSummary {
+  totalCollected: number;
+  paymentCount: number;
+  outstandingBalance: number;
+  tenantsWithBalance: number;
+  overdueAccounts: number;
+}
+
 export interface BillingTableRow {
   room: number;
   unitCode: string;

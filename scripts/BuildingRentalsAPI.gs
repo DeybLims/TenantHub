@@ -3,7 +3,9 @@
  * Copy this entire file into your Apps Script project (Code.gs).
  *
  * Sheet tabs expected:
- *   Tenants_DB  — Unit Code | Room | Name | Rent | MoveIn | Deposit | Status
+ *   Tenants_DB  — Unit Code | Room | Name | Contact Number | Email Address |
+ *                 Emergency Contact | Emergency Number | Lease Start | MoveIn |
+ *                 Rent | Deposit | Notes | Status
  *   Billing_DB  — Month | Room | Rent | ElecPrev | ElecCurr | ElecRate | ElecBill |
  *                 WaterPrev | WaterCurr | WaterRate | WaterBill | Adjustment |
  *                 TotalDue | Paid | DatePaid | Status
@@ -24,9 +26,15 @@ function initializeDatabase() {
       "Unit Code",
       "Room",
       "Name",
-      "Rent",
+      "Contact Number",
+      "Email Address",
+      "Emergency Contact",
+      "Emergency Number",
+      "Lease Start",
       "MoveIn",
+      "Rent",
       "Deposit",
+      "Notes",
       "Status",
     ],
     Billing_DB: [
@@ -56,10 +64,27 @@ function initializeDatabase() {
     if (!sheet) {
       sheet = ss.insertSheet(name);
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    } else if (name === "Tenants_DB") {
+      ensureSheetHeaders(sheet, headers);
     }
   }
 
   SpreadsheetApp.getUi().alert("Database Schema Validated & Initialized!");
+}
+
+function ensureSheetHeaders(sheet, expectedHeaders) {
+  const current = sheet
+    .getRange(1, 1, 1, sheet.getLastColumn())
+    .getValues()[0]
+    .map(function (value) {
+      return String(value || "").trim();
+    });
+
+  expectedHeaders.forEach(function (header, index) {
+    if (current[index] !== header) {
+      sheet.getRange(1, index + 1).setValue(header);
+    }
+  });
 }
 
 // ==========================================================================
@@ -217,9 +242,59 @@ function findBillingRowIndex(sheet, month, room) {
 // 5. TENANTS MODULE
 // ==========================================================================
 
+var TENANT_COLUMN_COUNT = 13;
+var TENANT_STATUS_COL = 12;
+
+function tenantStatusFromRow(row) {
+  return String(row[TENANT_STATUS_COL] || "")
+    .trim()
+    .toLowerCase();
+}
+
+function tenantHasName(row) {
+  return String(row[2] || "").trim() !== "";
+}
+
+function buildActiveTenantRow(data, existingRow) {
+  existingRow = existingRow || [];
+  return [
+    data.unitCode || existingRow[0] || "",
+    data.room != null ? data.room : existingRow[1],
+    data.name != null ? data.name : existingRow[2] || "",
+    data.contactNumber || data.contact || existingRow[3] || "",
+    data.emailAddress || data.email || existingRow[4] || "",
+    data.emergencyContact || existingRow[5] || "",
+    data.emergencyNumber || existingRow[6] || "",
+    data.leaseStart || existingRow[7] || "",
+    data.moveIn || existingRow[8] || "",
+    Number(data.rent != null ? data.rent : existingRow[9]) || 0,
+    Number(data.deposit != null ? data.deposit : existingRow[10]) || 0,
+    data.notes != null ? data.notes : existingRow[11] || "",
+    data.status || data.Status || "Active",
+  ];
+}
+
+function buildVacantTenantRow(data, existingRow) {
+  return [
+    data.unitCode || existingRow[0] || "",
+    existingRow[1],
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    0,
+    0,
+    "",
+    "Vacant",
+  ];
+}
+
 /**
- * Assigns a tenant to an existing vacant row (updates in place).
- * Does NOT append a duplicate row when a vacant slot exists.
+ * Assigns a tenant to an existing vacant row, updates an active profile,
+ * or vacates a room. Does NOT append duplicates when a vacant slot exists.
  */
 function saveNewTenant(data) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -236,64 +311,52 @@ function saveNewTenant(data) {
   const isVacate =
     requestedStatus === "vacant" || !String(data.name || "").trim();
 
+  let vacantRowIndex = -1;
+  let activeRowIndex = -1;
+
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][1]) !== room) continue;
 
-    const rowStatus = String(values[i][6] || "")
-      .trim()
-      .toLowerCase();
-    const hasName = String(values[i][2] || "").trim() !== "";
+    const rowStatus = tenantStatusFromRow(values[i]);
+    const hasName = tenantHasName(values[i]);
 
-    if (isVacate) {
-      if (rowStatus !== "vacant" || hasName) {
-        sheet.getRange(i + 1, 1, 1, 7).setValues([
-          [
-            data.unitCode || values[i][0] || "",
-            values[i][1],
-            "",
-            0,
-            "",
-            0,
-            "Vacant",
-          ],
-        ]);
-        return { success: true, message: "Room set to Vacant." };
-      }
-      continue;
-    }
-
-    if (rowStatus === "vacant" || !hasName) {
-      sheet.getRange(i + 1, 1, 1, 7).setValues([
-        [
-          data.unitCode || values[i][0] || "",
-          values[i][1],
-          data.name,
-          Number(data.rent) || 0,
-          data.moveIn || "",
-          Number(data.deposit) || 0,
-          "Active",
-        ],
-      ]);
-      return { success: true, message: "Tenant assigned to vacant room." };
+    if (rowStatus === "vacant" && !hasName) {
+      vacantRowIndex = i;
+    } else {
+      activeRowIndex = i;
     }
   }
 
   if (isVacate) {
-    return {
-      success: false,
-      message: "Active tenant for this room was not found.",
-    };
+    if (activeRowIndex < 0) {
+      return {
+        success: false,
+        message: "Active tenant for this room was not found.",
+      };
+    }
+    sheet
+      .getRange(activeRowIndex + 1, 1, 1, TENANT_COLUMN_COUNT)
+      .setValues([
+        buildVacantTenantRow(data, values[activeRowIndex]),
+      ]);
+    return { success: true, message: "Room set to Vacant." };
   }
 
-  sheet.appendRow([
-    data.unitCode || "",
-    data.room,
-    data.name,
-    Number(data.rent) || 0,
-    data.moveIn || "",
-    Number(data.deposit) || 0,
-    "Active",
-  ]);
+  if (vacantRowIndex >= 0) {
+    sheet
+      .getRange(vacantRowIndex + 1, 1, 1, TENANT_COLUMN_COUNT)
+      .setValues([buildActiveTenantRow(data, values[vacantRowIndex])]);
+    return { success: true, message: "Tenant assigned to vacant room." };
+  }
+
+  if (activeRowIndex >= 0) {
+    sheet
+      .getRange(activeRowIndex + 1, 1, 1, TENANT_COLUMN_COUNT)
+      .setValues([buildActiveTenantRow(data, values[activeRowIndex])]);
+    return { success: true, message: "Tenant profile updated." };
+  }
+
+  sheet.appendRow(buildActiveTenantRow(data, []));
   return {
     success: true,
     message: "Tenant committed successfully to database.",

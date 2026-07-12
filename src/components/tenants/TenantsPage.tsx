@@ -1,12 +1,13 @@
 "use client";
 
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AddTenantModal } from "@/components/tenants/AddTenantModal";
-import { TenantDetailPanel } from "@/components/tenants/TenantDetailPanel";
+import { TenantDetails } from "@/components/tenants/TenantDetails";
 import { TenantDetailPlaceholder } from "@/components/tenants/TenantDetailPlaceholder";
 import { TenantsTable } from "@/components/tenants/TenantsTable";
+import type { TenantFormData } from "@/components/tenants/types";
 import { MonthSelect } from "@/components/dashboard/MonthSelect";
 import { AppShell } from "@/components/layout/AppShell";
 import {
@@ -16,21 +17,24 @@ import {
   joinTenantsWithBilling,
   type TenantTableRow,
 } from "@/lib/joinTenantsBilling";
+import { mapTenantViewModel } from "@/lib/mapTenantViewModel";
+import { printTenantReport } from "@/lib/printTenantReport";
+import { buildTenantBillingSummary } from "@/lib/tenantBillingSummary";
+import { isVacantTenant } from "@/lib/tenantRooms";
 import { getVacantTenantSlots, hasVacantRoom } from "@/lib/tenantRooms";
+import { readSheetNumber } from "@/lib/readSheetNumber";
 import {
-  deleteTenant,
   fetchBillingRows,
   fetchTenants,
   getMockBillingRows,
   getMockTenants,
+  updateTenantProfile,
 } from "@/services/api";
-import { isVacantTenant } from "@/lib/tenantRooms";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
 export function TenantsPage() {
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<TenantTableRow | null>(
@@ -77,24 +81,18 @@ export function TenantsPage() {
     return joinTenantsWithBilling(tenants, billingRows, selectedMonth);
   }, [tenants, billingRows, selectedMonth]);
 
-  const filteredTenants = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return joinedTenants;
-
-    return joinedTenants.filter((tenant) => {
-      const unitMatch = tenant.UnitCode.toLowerCase().includes(query);
-      const nameMatch = tenant.Name.toLowerCase().includes(query);
-      const roomMatch = String(tenant.Room).includes(query);
-      return unitMatch || nameMatch || roomMatch;
-    });
-  }, [joinedTenants, search]);
+  const activeTenants = useMemo(
+    () => joinedTenants.filter((tenant) => !isVacantTenant(tenant)),
+    [joinedTenants],
+  );
 
   const selectedTenantRow = useMemo(() => {
     if (!selectedTenant) return null;
     return (
-      joinedTenants.find((tenant) => tenant.Room === selectedTenant.Room) ?? null
+      activeTenants.find((tenant) => tenant.Room === selectedTenant.Room) ??
+      null
     );
-  }, [joinedTenants, selectedTenant]);
+  }, [activeTenants, selectedTenant]);
 
   const selectedBilling = useMemo(() => {
     if (!selectedTenantRow || !billingRows || !selectedMonth) {
@@ -110,143 +108,139 @@ export function TenantsPage() {
   useEffect(() => {
     if (
       selectedTenant &&
-      !filteredTenants.some((tenant) => tenant.Room === selectedTenant.Room)
+      !activeTenants.some((tenant) => tenant.Room === selectedTenant.Room)
     ) {
       setSelectedTenant(null);
     }
-  }, [filteredTenants, selectedTenant]);
+  }, [activeTenants, selectedTenant]);
+
+  useEffect(() => {
+    if (selectedTenant || activeTenants.length === 0) return;
+    setSelectedTenant(activeTenants[0]);
+  }, [activeTenants, selectedTenant]);
 
   const isLoading = tenantsQuery.isLoading || billingQuery.isLoading;
   const isError = tenantsQuery.isError || billingQuery.isError;
   const error = tenantsQuery.error ?? billingQuery.error;
 
-  const handleSelectTenant = (tenant: TenantTableRow) => {
-    setSelectedTenant(tenant);
-  };
-
-  const deleteTenantMutation = useMutation({
-    mutationFn: deleteTenant,
+  const saveTenantMutation = useMutation({
+    mutationFn: updateTenantProfile,
     onSuccess: () => {
-      setSelectedTenant(null);
       void queryClient.invalidateQueries({ queryKey: ["tenants"] });
     },
   });
 
-  const handleDeleteTenant = () => {
-    if (!selectedTenantRow || isVacantTenant(selectedTenantRow)) return;
+  const handleSelectTenant = (tenant: TenantTableRow) => {
+    setSelectedTenant(tenant);
+  };
 
-    const confirmed = window.confirm(
-      `Remove ${selectedTenantRow.Name} from Room ${selectedTenantRow.Room}? This unit will be set back to Vacant.`,
-    );
-    if (!confirmed) return;
+  const handleSaveTenant = (data: TenantFormData) => {
+    if (!selectedTenantRow) return;
 
-    deleteTenantMutation.mutate({
+    saveTenantMutation.mutate({
       room: String(selectedTenantRow.Room),
       unitCode: selectedTenantRow.UnitCode,
+      name: data.name.trim(),
+      contactNumber: data.contactNumber.trim(),
+      emailAddress: data.email.trim(),
+      emergencyContact: data.emergencyContact.trim(),
+      emergencyNumber: data.emergencyNumber.trim(),
+      leaseStart: data.leaseStart,
+      moveIn: data.moveInDate,
+      rent: readSheetNumber(data.baseRent),
+      deposit: readSheetNumber(data.deposit),
+      notes: data.notes.trim(),
     });
+  };
+
+  const handleExportPdf = () => {
+    if (!selectedTenantRow) return;
+    const billingSummary = buildTenantBillingSummary(
+      selectedBilling,
+      selectedMonth,
+    );
+    const tenantView = mapTenantViewModel(selectedTenantRow, billingSummary);
+    printTenantReport(tenantView);
   };
 
   return (
     <AppShell>
-      <article className="rounded-xl bg-surface-card shadow-card">
-        <div className="flex flex-col gap-4 border-b border-gray-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <h1 className="text-xl font-bold text-navy sm:text-2xl">
-            Tenants Database
-          </h1>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-3xl font-bold text-navy">Tenants</h1>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <MonthSelect
-              months={monthOptions}
-              value={selectedMonth}
-              onChange={setSelectedMonth}
-              disabled={isLoading || monthOptions.length === 0}
+        <div className="flex flex-wrap items-center gap-3">
+          <MonthSelect
+            months={monthOptions}
+            value={selectedMonth}
+            onChange={setSelectedMonth}
+            disabled={isLoading || monthOptions.length === 0}
+          />
+
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            disabled={!canAddTenant || isLoading}
+            title={
+              canAddTenant
+                ? undefined
+                : "All 8 units are occupied. Remove a tenant first."
+            }
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            Add New
+          </button>
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="space-y-3 py-6" aria-hidden>
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-12 animate-pulse rounded-lg bg-gray-100"
             />
+          ))}
+        </div>
+      )}
 
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                aria-hidden
-              />
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name, unit code, or room…"
-                className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-700 shadow-sm placeholder:text-gray-400 focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20 sm:w-64"
-                aria-label="Search tenants"
-              />
-            </div>
+      {isError && (
+        <p className="py-8 text-center text-sm text-red-500">
+          {error instanceof Error ? error.message : "Failed to load tenants"}
+        </p>
+      )}
 
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(true)}
-              disabled={!canAddTenant || isLoading}
-              title={
-                canAddTenant
-                  ? undefined
-                  : "All 8 units are occupied. Remove a tenant first."
-              }
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              Add New Tenant
-            </button>
+      {!isLoading && !isError && (
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+          <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:col-span-7">
+            <TenantsTable
+              tenants={joinedTenants}
+              selectedTenant={selectedTenantRow}
+              onSelectTenant={handleSelectTenant}
+            />
+          </div>
+
+          <div className="min-w-0 lg:col-span-5">
+            {selectedTenantRow ? (
+              <TenantDetails
+                tenant={selectedTenantRow}
+                billing={selectedBilling}
+                selectedMonth={selectedMonth}
+                onSave={handleSaveTenant}
+                isSaving={saveTenantMutation.isPending}
+                saveError={
+                  saveTenantMutation.error instanceof Error
+                    ? saveTenantMutation.error.message
+                    : null
+                }
+                onExportPdf={handleExportPdf}
+              />
+            ) : (
+              <TenantDetailPlaceholder />
+            )}
           </div>
         </div>
-
-        <div className="px-5 py-4 sm:px-6">
-          {isLoading && (
-            <div className="space-y-3 py-6" aria-hidden>
-              {Array.from({ length: 5 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="h-12 animate-pulse rounded-lg bg-gray-100"
-                />
-              ))}
-            </div>
-          )}
-
-          {isError && (
-            <p className="py-8 text-center text-sm text-red-600">
-              {error instanceof Error
-                ? error.message
-                : "Failed to load tenants"}
-            </p>
-          )}
-
-          {!isLoading && !isError && (
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-              <div className="min-w-0 lg:w-2/3">
-                <TenantsTable
-                  tenants={filteredTenants}
-                  selectedTenant={selectedTenantRow}
-                  onSelectTenant={handleSelectTenant}
-                />
-              </div>
-
-              <div className="min-w-0 lg:w-1/3">
-                {selectedTenantRow ? (
-                  <TenantDetailPanel
-                    tenant={selectedTenantRow}
-                    billing={selectedBilling}
-                    selectedMonth={selectedMonth}
-                    onClose={() => setSelectedTenant(null)}
-                    onDelete={handleDeleteTenant}
-                    isDeleting={deleteTenantMutation.isPending}
-                    deleteError={
-                      deleteTenantMutation.error instanceof Error
-                        ? deleteTenantMutation.error.message
-                        : null
-                    }
-                  />
-                ) : (
-                  <TenantDetailPlaceholder />
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </article>
+      )}
 
       <AddTenantModal
         open={isModalOpen}

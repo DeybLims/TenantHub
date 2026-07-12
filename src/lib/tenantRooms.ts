@@ -10,9 +10,15 @@ export function createVacantPlaceholder(room: number): TenantRecord {
     UnitCode: "",
     Room: room,
     Name: "",
-    Rent: 0,
+    ContactNumber: "",
+    EmailAddress: "",
+    EmergencyContact: "",
+    EmergencyNumber: "",
+    LeaseStart: "",
     MoveIn: "",
+    Rent: 0,
     Deposit: 0,
+    Notes: "",
     Status: "Vacant",
   };
 }

@@ -38,6 +38,30 @@ export function formatMoveInDate(value: string): string {
   });
 }
 
+/** Table date format: Aug 30, 2025 */
+export function formatTableDate(value: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** Long date for billing summary: July 04, 2025 */
+export function formatLongDate(value: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
+
 /** Formats DatePaid from billing; shows placeholder when unpaid or missing. */
 export function formatDatePaid(
   datePaid: string | null | undefined,

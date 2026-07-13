@@ -7,6 +7,7 @@ import {
   Mail,
   Pencil,
   Phone,
+  Trash2,
   User,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -30,9 +31,12 @@ export interface TenantDetailsProps {
   selectedMonth: string;
   onSave?: (data: TenantFormData) => void;
   onCancel?: () => void;
+  onDelete?: () => void;
   onExportPdf?: () => void;
   isSaving?: boolean;
+  isDeleting?: boolean;
   saveError?: string | null;
+  deleteError?: string | null;
 }
 
 const fieldClass =
@@ -126,9 +130,12 @@ export function TenantDetails({
   selectedMonth,
   onSave,
   onCancel,
+  onDelete,
   onExportPdf,
   isSaving = false,
+  isDeleting = false,
   saveError = null,
+  deleteError = null,
 }: TenantDetailsProps) {
   const [name, setName] = useState(tenant.Name);
   const [contactNumber, setContactNumber] = useState(tenant.ContactNumber);
@@ -181,6 +188,15 @@ export function TenantDetails({
   const handleCancel = () => {
     resetForm();
     onCancel?.();
+  };
+
+  const handleDelete = () => {
+    const tenantName = name.trim() || tenant.Name;
+    const confirmed = window.confirm(
+      `Remove ${tenantName} from ${tenant.UnitCode || `Room ${tenant.Room}`}? The unit will be marked Vacant so you can assign a new tenant.`,
+    );
+    if (!confirmed) return;
+    onDelete?.();
   };
 
   const handleSave = () => {
@@ -409,27 +425,37 @@ export function TenantDetails({
           />
         </section>
 
-        {saveError && (
+        {(saveError || deleteError) && (
           <p className="text-sm text-red-500" role="alert">
-            {saveError}
+            {saveError ?? deleteError}
           </p>
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-5 py-4">
+      <div className="flex flex-col gap-3 border-t border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <button
           type="button"
-          onClick={handleCancel}
-          disabled={isSaving}
-          className="text-sm font-semibold text-blue-500 hover:text-blue-600 disabled:opacity-60"
+          onClick={handleDelete}
+          disabled={isSaving || isDeleting || !onDelete}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Cancel
+          <Trash2 className="h-4 w-4" aria-hidden />
+          {isDeleting ? "Removing…" : "Remove Tenant"}
         </button>
-        <div className="flex flex-wrap items-center gap-3">
+
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={isSaving || isDeleting}
+            className="text-sm font-semibold text-blue-500 hover:text-blue-600 disabled:opacity-60"
+          >
+            Cancel
+          </button>
           <button
             type="button"
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || isDeleting}
             className="rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? "Saving…" : "Save Changes"}
@@ -437,7 +463,8 @@ export function TenantDetails({
           <button
             type="button"
             onClick={onExportPdf}
-            className="rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600"
+            disabled={isDeleting}
+            className="rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Export to PDF
           </button>

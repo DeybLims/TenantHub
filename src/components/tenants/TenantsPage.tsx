@@ -24,6 +24,7 @@ import { isVacantTenant } from "@/lib/tenantRooms";
 import { getVacantTenantSlots, hasVacantRoom } from "@/lib/tenantRooms";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import {
+  deleteTenant,
   fetchBillingRows,
   fetchTenants,
   getMockBillingRows,
@@ -130,6 +131,14 @@ export function TenantsPage() {
     },
   });
 
+  const deleteTenantMutation = useMutation({
+    mutationFn: deleteTenant,
+    onSuccess: () => {
+      setSelectedTenant(null);
+      void queryClient.invalidateQueries({ queryKey: ["tenants"] });
+    },
+  });
+
   const handleSelectTenant = (tenant: TenantTableRow) => {
     setSelectedTenant(tenant);
   };
@@ -150,6 +159,15 @@ export function TenantsPage() {
       rent: readSheetNumber(data.baseRent),
       deposit: readSheetNumber(data.deposit),
       notes: data.notes.trim(),
+    });
+  };
+
+  const handleDeleteTenant = () => {
+    if (!selectedTenantRow) return;
+
+    deleteTenantMutation.mutate({
+      room: String(selectedTenantRow.Room),
+      unitCode: selectedTenantRow.UnitCode,
     });
   };
 
@@ -227,10 +245,17 @@ export function TenantsPage() {
                 billing={selectedBilling}
                 selectedMonth={selectedMonth}
                 onSave={handleSaveTenant}
+                onDelete={handleDeleteTenant}
                 isSaving={saveTenantMutation.isPending}
+                isDeleting={deleteTenantMutation.isPending}
                 saveError={
                   saveTenantMutation.error instanceof Error
                     ? saveTenantMutation.error.message
+                    : null
+                }
+                deleteError={
+                  deleteTenantMutation.error instanceof Error
+                    ? deleteTenantMutation.error.message
                     : null
                 }
                 onExportPdf={handleExportPdf}

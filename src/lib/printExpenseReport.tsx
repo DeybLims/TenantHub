@@ -2,11 +2,11 @@
 
 import { createRoot, type Root } from "react-dom/client";
 import {
-  BillingExportReport,
-  type BillingExportReportProps,
-} from "@/components/billing/BillingExportReport";
+  ExpenseExportReport,
+  type ExpenseExportReportProps,
+} from "@/components/expenses/ExpenseExportReport";
 
-const PRINT_ROOT_ID = "billing-export-print-root";
+const PRINT_ROOT_ID = "expense-export-print-root";
 
 let activeRoot: Root | null = null;
 
@@ -21,11 +21,8 @@ function cleanupPrintRoot(): void {
   }
 }
 
-/**
- * Renders the billing export layout off-screen, opens the browser print dialog,
- * then tears down the print DOM after printing finishes.
- */
-export function printBillingReport(props: BillingExportReportProps): void {
+/** Renders the expense export layout and opens the browser print dialog. */
+export function printExpenseReport(props: ExpenseExportReportProps): void {
   if (typeof document === "undefined") return;
 
   cleanupPrintRoot();
@@ -36,7 +33,7 @@ export function printBillingReport(props: BillingExportReportProps): void {
   document.body.appendChild(container);
 
   activeRoot = createRoot(container);
-  activeRoot.render(<BillingExportReport {...props} />);
+  activeRoot.render(<ExpenseExportReport {...props} />);
 
   const handleAfterPrint = () => {
     window.removeEventListener("afterprint", handleAfterPrint);
@@ -45,11 +42,9 @@ export function printBillingReport(props: BillingExportReportProps): void {
 
   window.addEventListener("afterprint", handleAfterPrint);
 
-  // Wait for React commit + layout before opening the print dialog.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       window.print();
-      // Fallback cleanup if afterprint never fires (some browsers).
       window.setTimeout(() => {
         if (document.getElementById(PRINT_ROOT_ID)) {
           handleAfterPrint();

@@ -1,53 +1,59 @@
 export type UtilityPaymentStatus = "Paid" | "Unpaid";
 
 /**
- * Manual inputs only — matches spreadsheet rows 13–17 (Amount/Consumption)
- * and sub-meter readings rows 30–31 (Prev/Curr).
- * True rates and consumption deltas are always calculated.
+ * User-editable expense inputs for one billing month.
+ * True rates and analytics are always derived — never stored.
  */
 export interface ExpenseRecord {
   billingMonth: string;
   paidToUtility: boolean;
-  meralcoAmount: number;
+  /** JJC meter previous reading (kWh) */
+  jjcPreviousReading: number;
+  /** JJC meter current reading (kWh) */
+  jjcCurrentReading: number;
+  /** Meralco Master Bill Amount (₱) */
+  meralcoBillAmount: number;
+  /** Meralco Total Consumption (kWh) */
   meralcoConsumption: number;
-  miwdResidentialAmount: number;
-  miwdResidentialConsumption: number;
-  miwdCommercialAmount: number;
-  miwdCommercialConsumption: number;
-  aptMotorElecPrev: number;
-  aptMotorElecCurr: number;
-  jjcElecPrev: number;
-  jjcElecCurr: number;
+  /** MIWD Residential Base (₱) */
+  miwdResidential: number;
+  /** MIWD Commercial Base (₱) */
+  miwdCommercial: number;
+  /** MIWD Total Consumption (m³) */
+  miwdConsumption: number;
+  /** Special Water Rate (₱/m³) charged to tenants */
+  miwdSpecialRate: number;
 }
 
+/** Auto-calculated values from ExpenseRecord inputs. */
 export interface UtilityExpenseDerived {
+  /** meralcoBillAmount / meralcoConsumption */
   meralcoTrueRate: number;
-  miwdResidentialTrueRate: number;
-  miwdCommercialTrueRate: number;
-  averageWaterAmount: number;
-  averageWaterConsumption: number;
-  averageWaterTrueRate: number;
-  aptMotorConsumptionKwh: number;
-  aptMotorTrueCost: number;
-  jjcConsumptionKwh: number;
-  jjcTrueCost: number;
+  /** jjcCurrentReading - jjcPreviousReading */
+  jjcConsumption: number;
+  /** jjcConsumption * meralcoTrueRate */
+  jjcCalculatedAmount: number;
+  /** (miwdResidential + miwdCommercial) / miwdConsumption */
+  miwdTrueRate: number;
   electricitySellingRate: number;
-  waterStandardSellingRate: number;
-  specialWaterRate: number;
 }
 
 export interface UtilityExpenseAnalytics {
   derived: UtilityExpenseDerived;
   tenantTotalConsumptionKwh: number;
+  tenantTotalWaterM3: number;
+  /** tenant kWh × selling rate */
   tenantTotalBilled: number;
+  /** tenant kWh × meralco true rate */
   tenantElectricityTrueCost: number;
   netElectricityProfit: number;
+  /** tenant m³ × miwdSpecialRate */
   tenantWaterRevenue: number;
+  /** tenant m³ × miwd true rate */
   trueTenantWaterCost: number;
   netWaterProfit: number;
   miwdResidentialAmount: number;
   miwdCommercialAmount: number;
-  totalDueNet: number;
   warnings: Array<{
     room: number;
     utility: string;
@@ -59,16 +65,14 @@ export function defaultExpenseRecord(billingMonth = ""): ExpenseRecord {
   return {
     billingMonth,
     paidToUtility: false,
-    meralcoAmount: 0,
+    jjcPreviousReading: 0,
+    jjcCurrentReading: 0,
+    meralcoBillAmount: 0,
     meralcoConsumption: 0,
-    miwdResidentialAmount: 0,
-    miwdResidentialConsumption: 0,
-    miwdCommercialAmount: 0,
-    miwdCommercialConsumption: 0,
-    aptMotorElecPrev: 0,
-    aptMotorElecCurr: 0,
-    jjcElecPrev: 0,
-    jjcElecCurr: 0,
+    miwdResidential: 0,
+    miwdCommercial: 0,
+    miwdConsumption: 0,
+    miwdSpecialRate: 30,
   };
 }
 

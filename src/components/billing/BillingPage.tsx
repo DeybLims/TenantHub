@@ -153,23 +153,33 @@ export function BillingPage() {
   };
 
   const handleExportAll = () => {
-    const allBills = filteredRows.flatMap((row) => {
+    const uniqueBills = new Map<string, ReturnType<typeof sheetRowToBill>>();
+
+    for (const row of filteredRows) {
       const tenant = tenants.find((item) => item.Room === row.room);
-      return billingRows
-        .filter((sheetRow) => Number(sheetRow.Room) === row.room)
-        .filter((sheetRow) => {
-          const monthDate = new Date(String(sheetRow.Month));
-          if (Number.isNaN(monthDate.getTime())) return true;
-          if (fromDate && monthDate < new Date(fromDate)) return false;
+      for (const sheetRow of billingRows) {
+        if (Number(sheetRow.Room) !== row.room) continue;
+
+        const monthDate = new Date(String(sheetRow.Month));
+        if (!Number.isNaN(monthDate.getTime())) {
+          if (fromDate && monthDate < new Date(fromDate)) continue;
           if (toDate) {
             const end = new Date(toDate);
             end.setHours(23, 59, 59, 999);
-            if (monthDate > end) return false;
+            if (monthDate > end) continue;
           }
-          return true;
-        })
-        .map((sheetRow) => sheetRowToBill(sheetRow, tenant));
-    });
+        }
+
+        const bill = sheetRowToBill(sheetRow, tenant);
+        uniqueBills.set(bill.id, bill);
+      }
+    }
+
+    const allBills = Array.from(uniqueBills.values()).sort(
+      (a, b) =>
+        new Date(b.billingMonth).getTime() - new Date(a.billingMonth).getTime() ||
+        a.room - b.room,
+    );
 
     if (allBills.length === 0) return;
 

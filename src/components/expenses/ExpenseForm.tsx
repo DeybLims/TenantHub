@@ -157,22 +157,62 @@ export function ExpenseForm({
 
         <section className="space-y-3">
           <SectionTitle>JJC Consumption</SectionTitle>
-          <div className="flex flex-col gap-4 sm:flex-row">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <NumberField
               label="Previous Reading"
-              value={record.jjcElecPrev}
-              onChange={(value) => onRecordChange({ jjcElecPrev: value })}
+              value={record.jjcPreviousReading}
+              onChange={(value) =>
+                onRecordChange({ jjcPreviousReading: value })
+              }
               unit="kWh"
-              className="sm:flex-[2]"
             />
             <NumberField
               label="Current Reading"
-              value={record.jjcElecCurr}
-              onChange={(value) => onRecordChange({ jjcElecCurr: value })}
+              value={record.jjcCurrentReading}
+              onChange={(value) =>
+                onRecordChange({ jjcCurrentReading: value })
+              }
               unit="kWh"
-              className="sm:flex-1"
             />
+            <FloatingLabelField label="Calculated Amount">
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                  ₱
+                </span>
+                <input
+                  type="text"
+                  readOnly
+                  value={
+                    derived.jjcCalculatedAmount > 0
+                      ? derived.jjcCalculatedAmount.toLocaleString("en-PH", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })
+                      : ""
+                  }
+                  placeholder="Auto"
+                  className={`${inputClass} cursor-default bg-gray-50 pl-8`}
+                />
+              </div>
+            </FloatingLabelField>
           </div>
+          {derived.jjcConsumption > 0 && (
+            <p className="text-xs text-gray-500">
+              Consumption:{" "}
+              <span className="font-semibold text-navy">
+                {derived.jjcConsumption.toLocaleString("en-PH")} kWh
+              </span>
+              {derived.meralcoTrueRate > 0 && (
+                <>
+                  {" "}
+                  × True Rate{" "}
+                  <span className="font-semibold text-navy">
+                    ₱{derived.meralcoTrueRate.toFixed(2)}
+                  </span>
+                </>
+              )}
+            </p>
+          )}
         </section>
 
         <section className="space-y-3">
@@ -180,8 +220,8 @@ export function ExpenseForm({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <NumberField
               label="Master Bill Amount"
-              value={record.meralcoAmount}
-              onChange={(value) => onRecordChange({ meralcoAmount: value })}
+              value={record.meralcoBillAmount}
+              onChange={(value) => onRecordChange({ meralcoBillAmount: value })}
             />
             <NumberField
               label="Total Consumption"
@@ -202,52 +242,32 @@ export function ExpenseForm({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <NumberField
               label="Residential Base"
-              value={record.miwdResidentialAmount}
-              onChange={(value) =>
-                onRecordChange({ miwdResidentialAmount: value })
-              }
+              value={record.miwdResidential}
+              onChange={(value) => onRecordChange({ miwdResidential: value })}
             />
             <NumberField
               label="Commercial Base"
-              value={record.miwdCommercialAmount}
-              onChange={(value) =>
-                onRecordChange({ miwdCommercialAmount: value })
-              }
+              value={record.miwdCommercial}
+              onChange={(value) => onRecordChange({ miwdCommercial: value })}
             />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <NumberField
-              label="Residential Consumption"
-              value={record.miwdResidentialConsumption}
-              onChange={(value) =>
-                onRecordChange({ miwdResidentialConsumption: value })
-              }
-              unit="m³"
-            />
-            <NumberField
-              label="Commercial Consumption"
-              value={record.miwdCommercialConsumption}
-              onChange={(value) =>
-                onRecordChange({ miwdCommercialConsumption: value })
-              }
-              unit="m³"
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <RateDisplay
               label="Total Consumption"
-              value={derived.averageWaterConsumption}
+              value={record.miwdConsumption}
+              onChange={(value) => onRecordChange({ miwdConsumption: value })}
               unit="m³"
             />
             <RateDisplay
               label="True Rate"
-              value={derived.averageWaterTrueRate}
+              value={derived.miwdTrueRate}
               unit="/m³"
             />
           </div>
-          <RateDisplay
+          <NumberField
             label="Special Water Rate"
-            value={derived.specialWaterRate}
+            value={record.miwdSpecialRate}
+            onChange={(value) => onRecordChange({ miwdSpecialRate: value })}
             unit="/m³"
           />
         </section>

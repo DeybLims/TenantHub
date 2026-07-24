@@ -97,7 +97,7 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
           />
           <AnalyticsRow
             label="JJC Consumption"
-            value={`${formatUsage(derived.jjcConsumptionKwh)} kWh`}
+            value={`${formatUsage(derived.jjcConsumption)} kWh`}
           />
           <AnalyticsRow
             label="Total Tenant Billed"
@@ -122,7 +122,7 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
           />
           <AnalyticsRow
             label="Standard Base Rate"
-            value={`${formatRate(derived.averageWaterTrueRate)} /m³`}
+            value={`${formatRate(derived.miwdTrueRate)} /m³`}
           />
           <AnalyticsRow
             label="Residential Base"

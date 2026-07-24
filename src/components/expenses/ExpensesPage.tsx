@@ -11,6 +11,7 @@ import {
   getBillingMonthOptions,
   getDefaultBillingMonth,
 } from "@/lib/joinTenantsBilling";
+import { printExpenseReport } from "@/lib/printExpenseReport";
 import {
   fetchBillingRows,
   fetchTenants,
@@ -66,6 +67,16 @@ export function ExpensesPage() {
     tenants,
   });
 
+  const handleExportPdf = () => {
+    if (!analytics) return;
+    printExpenseReport({
+      selectedMonth,
+      record,
+      derived,
+      analytics,
+    });
+  };
+
   const isLoading = billingQuery.isLoading || tenantsQuery.isLoading;
   const isError = billingQuery.isError || tenantsQuery.isError;
   const error = billingQuery.error ?? tenantsQuery.error;
@@ -79,7 +90,7 @@ export function ExpensesPage() {
 
         <button
           type="button"
-          onClick={() => window.print()}
+          onClick={handleExportPdf}
           disabled={!analytics}
           className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -115,7 +126,7 @@ export function ExpensesPage() {
               onMonthChange={setSelectedMonth}
               onCancel={cancel}
               onSave={save}
-              onExportPdf={() => window.print()}
+              onExportPdf={handleExportPdf}
               isDirty={isDirty}
             />
 

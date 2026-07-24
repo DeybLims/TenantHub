@@ -1,4 +1,4 @@
-import { Calendar } from "lucide-react";
+import { ArrowRight, Calendar } from "lucide-react";
 import { formatPesoDecimal } from "@/lib/format";
 import type { BillingDashboardSummary } from "@/types/billing";
 
@@ -23,7 +23,7 @@ function DateField({
   onChange: (value: string) => void;
 }) {
   return (
-    <div>
+    <div className="min-w-0 flex-1">
       <label className="mb-1 block text-xs font-medium text-gray-500">
         {label}
       </label>
@@ -48,21 +48,21 @@ function SummaryCard({
   value,
   subtitle,
   borderClass,
+  titleClass,
   valueClass = "text-navy",
 }: {
   title: string;
   value: string;
   subtitle: string;
   borderClass: string;
+  titleClass: string;
   valueClass?: string;
 }) {
   return (
     <div
-      className={`rounded-lg border-2 bg-white px-4 py-3 shadow-sm ${borderClass}`}
+      className={`rounded-lg border border-gray-200 border-l-4 bg-white px-4 py-3 shadow-sm ${borderClass}`}
     >
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-        {title}
-      </p>
+      <p className={`text-xs font-medium ${titleClass}`}>{title}</p>
       <p className={`mt-1 text-xl font-bold ${valueClass}`}>{value}</p>
       <p className="mt-0.5 text-xs text-gray-500">{subtitle}</p>
     </div>
@@ -78,8 +78,12 @@ export function BillingSummaryWidgets({
 }: BillingSummaryWidgetsProps) {
   return (
     <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-12">
-      <div className="grid grid-cols-2 gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm lg:col-span-3">
+      <div className="flex items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm lg:col-span-3">
         <DateField label="From" value={fromDate} onChange={onFromDateChange} />
+        <ArrowRight
+          className="mb-3 h-4 w-4 shrink-0 text-gray-400"
+          aria-hidden
+        />
         <DateField label="To" value={toDate} onChange={onToDateChange} />
       </div>
 
@@ -88,21 +92,24 @@ export function BillingSummaryWidgets({
           title="Total Collected"
           value={formatPesoDecimal(summary.totalCollected)}
           subtitle={`${summary.paymentCount} payments`}
-          borderClass="border-emerald-500"
+          borderClass="border-l-emerald-500"
+          titleClass="text-emerald-600"
           valueClass="text-emerald-600"
         />
         <SummaryCard
           title="Outstanding Balance"
           value={formatPesoDecimal(summary.outstandingBalance)}
           subtitle={`${summary.tenantsWithBalance} tenants`}
-          borderClass="border-orange-500"
+          borderClass="border-l-orange-500"
+          titleClass="text-orange-500"
           valueClass="text-orange-500"
         />
         <SummaryCard
           title="Overdue Accounts"
           value={String(summary.overdueAccounts)}
           subtitle="tenants with unpaid bills"
-          borderClass="border-red-500"
+          borderClass="border-l-red-500"
+          titleClass="text-red-500"
           valueClass="text-red-500"
         />
       </div>

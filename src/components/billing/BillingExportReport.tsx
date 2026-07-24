@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import { FileText, KeyRound } from "lucide-react";
 import {
+  getBillingTableStatusClass,
+  getBillingTableStatusLabel,
+} from "@/components/billing/billingStatusBadge";
+import {
   formatStatementPeriod,
   summarizeBills,
 } from "@/lib/mapBillingViewModel";
@@ -20,12 +24,6 @@ export interface BillingExportReportProps {
   bills: Bill[];
   periodSummary?: BillingPeriodSummary;
   generatedAt?: Date;
-}
-
-function statusTextClass(status: string): string {
-  if (status === "Paid") return "text-emerald-600";
-  if (status === "Partial") return "text-orange-500";
-  return "text-red-500";
 }
 
 function SummaryLine({
@@ -120,7 +118,7 @@ function ReportSection({
 }) {
   return (
     <section className="mb-6">
-      <div className="mb-3 flex items-center gap-2 bg-blue-600 px-4 py-2 text-white">
+      <div className="mb-3 flex items-center gap-2 bg-blue-500 px-4 py-2 text-white">
         <FileText className="h-4 w-4" aria-hidden />
         <h3 className="text-sm font-bold">{title}</h3>
       </div>
@@ -210,11 +208,12 @@ export function BillingExportReport({
           value={formatExpenseAmount(summary.balance)}
           valueClass="text-red-500"
         />
-        <SummaryLine
-          label="Status"
-          value={summary.status}
-          valueClass={statusTextClass(summary.status)}
-        />
+        <div className="flex items-center justify-between py-1.5 text-sm">
+          <span className="text-gray-600">Status</span>
+          <span className={getBillingTableStatusClass(summary.status)}>
+            {getBillingTableStatusLabel(summary.status)}
+          </span>
+        </div>
       </section>
 
       <ReportSection title="Billing Summary">
@@ -225,7 +224,7 @@ export function BillingExportReport({
             <article key={bill.id} className="mb-6 border border-gray-200 p-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <h4 className="text-lg font-bold">{bill.id}</h4>
+                  <h4 className="text-lg font-bold">Bill #{bill.id}</h4>
                   <p className="text-sm text-red-500">
                     Due Date:{" "}
                     {bill.dueDate ? formatLongDate(bill.dueDate) : "—"}
@@ -246,11 +245,12 @@ export function BillingExportReport({
                     value={formatPesoDecimal(bill.balance)}
                     valueClass="text-red-500"
                   />
-                  <SummaryLine
-                    label="Status"
-                    value={bill.status}
-                    valueClass={statusTextClass(bill.status)}
-                  />
+                  <div className="flex items-center justify-end gap-2 py-1.5">
+                    <span className="text-gray-600">Status</span>
+                    <span className={getBillingTableStatusClass(bill.status)}>
+                      {getBillingTableStatusLabel(bill.status)}
+                    </span>
+                  </div>
                 </div>
               </div>
               <UtilityTable bill={bill} />

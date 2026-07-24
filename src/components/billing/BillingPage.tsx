@@ -3,8 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CloudDownload, FileText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { BillingDetails } from "@/components/billing/BillingDetails";
-import { BillingDetailPlaceholder } from "@/components/billing/BillingDetailPlaceholder";
+import { BillingPreviewModal } from "@/components/billing/BillingPreviewModal";
 import { BillingSummaryWidgets } from "@/components/billing/BillingSummaryWidgets";
 import { BillingTable } from "@/components/billing/BillingTable";
 import { InvoiceModal } from "@/components/billing/InvoiceModal";
@@ -32,7 +31,8 @@ import type { BillingTableRow } from "@/types/billing";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
 function defaultDateRange(month: string): { from: string; to: string } {
-  const base = billingMonthToDateInput(month) || new Date().toISOString().slice(0, 10);
+  const base =
+    billingMonthToDateInput(month) || new Date().toISOString().slice(0, 10);
   const date = new Date(base);
   const year = date.getFullYear();
   const monthIndex = date.getMonth();
@@ -43,7 +43,8 @@ function defaultDateRange(month: string): { from: string; to: string } {
 
 export function BillingPage() {
   const queryClient = useQueryClient();
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState<BillingTableRow | null>(null);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -69,8 +70,10 @@ export function BillingPage() {
 
   useEffect(() => {
     if (!billingRows.length || billingAnchorMonth) return;
-    const months = [...new Set(billingRows.map((row) => row.Month).filter(Boolean))];
-    const latest = months.at(-1) ?? "";
+    const months = [
+      ...new Set(billingRows.map((row) => row.Month).filter(Boolean)),
+    ];
+    const latest = String(months.at(-1) ?? "");
     setBillingAnchorMonth(latest);
     const range = defaultDateRange(latest);
     setFromDate(range.from);
@@ -79,19 +82,25 @@ export function BillingPage() {
 
   const filteredRows = useMemo(() => {
     if (!billingRows.length) return [];
-    const monthRows = billingRows.reduce<BillingTableRow[]>((acc, row) => {
-      const month = String(row.Month);
-      const existing = buildBillingTableRows(billingRows, tenants, month);
-      return [...acc, ...existing];
-    }, []);
+
+    const months = [
+      ...new Set(billingRows.map((row) => String(row.Month)).filter(Boolean)),
+    ];
 
     const unique = new Map<string, BillingTableRow>();
-    for (const row of monthRows) {
-      unique.set(`${row.month}-${row.room}`, row);
+    for (const month of months) {
+      for (const row of buildBillingTableRows(billingRows, tenants, month)) {
+        unique.set(`${row.month}-${row.room}`, row);
+      }
     }
 
     return filterBillingRowsByDateRange(
-      Array.from(unique.values()).sort((a, b) => a.room - b.room),
+      Array.from(unique.values()).sort((a, b) => {
+        const monthDiff =
+          new Date(b.month).getTime() - new Date(a.month).getTime();
+        if (monthDiff !== 0) return monthDiff;
+        return a.room - b.room;
+      }),
       fromDate,
       toDate,
     );
@@ -102,32 +111,16 @@ export function BillingPage() {
     [filteredRows],
   );
 
-  const selectedRowData = useMemo(() => {
-    if (!selectedRow) return null;
-    return filteredRows.find((row) => row.room === selectedRow.room) ?? selectedRow;
-  }, [filteredRows, selectedRow]);
-
   const tenantBills = useMemo(() => {
-    if (!selectedRowData) return [];
+    if (!selectedRow) return [];
     return buildBillsForRoom(
       billingRows,
       tenants,
-      selectedRowData.room,
+      selectedRow.room,
       fromDate,
       toDate,
     );
-  }, [billingRows, tenants, selectedRowData, fromDate, toDate]);
-
-  useEffect(() => {
-    if (selectedRow && !filteredRows.some((row) => row.room === selectedRow.room)) {
-      setSelectedRow(null);
-    }
-  }, [filteredRows, selectedRow]);
-
-  useEffect(() => {
-    if (selectedRow || filteredRows.length === 0) return;
-    setSelectedRow(filteredRows[0]);
-  }, [filteredRows, selectedRow]);
+  }, [billingRows, tenants, selectedRow, fromDate, toDate]);
 
   const isLoading = tenantsQuery.isLoading || billingQuery.isLoading;
   const isError = tenantsQuery.isError || billingQuery.isError;
@@ -138,40 +131,50 @@ export function BillingPage() {
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
-  const exportProps = selectedRowData
-    ? {
-        tenantName: selectedRowData.tenantName,
-        unitCode: selectedRowData.unitCode,
-        fromDate,
-        toDate,
-        bills: tenantBills,
-        periodSummary: summarizeBills(tenantBills),
-      }
-    : null;
+  const handleSelectRow = (row: BillingTableRow) => {
+    setSelectedRow(row);
+    setIsPreviewOpen(true);
+  };
+
+  const handleClosePreview = () => {
+    setIsPreviewOpen(false);
+  };
 
   const handleExportSelected = () => {
-    if (!exportProps) return;
-    printBillingReport(exportProps);
+    if (!selectedRow) return;
+    printBillingReport({
+      tenantName: selectedRow.tenantName,
+      unitCode: selectedRow.unitCode,
+      fromDate,
+      toDate,
+      bills: tenantBills,
+      periodSummary: summarizeBills(tenantBills),
+    });
   };
 
   const handleExportAll = () => {
-    const tenantMap = new Map<number, BillingTableRow>();
-    for (const row of filteredRows) {
-      tenantMap.set(row.room, row);
-    }
-
     const allBills = filteredRows.flatMap((row) => {
       const tenant = tenants.find((item) => item.Room === row.room);
       return billingRows
         .filter((sheetRow) => Number(sheetRow.Room) === row.room)
+        .filter((sheetRow) => {
+          const monthDate = new Date(String(sheetRow.Month));
+          if (Number.isNaN(monthDate.getTime())) return true;
+          if (fromDate && monthDate < new Date(fromDate)) return false;
+          if (toDate) {
+            const end = new Date(toDate);
+            end.setHours(23, 59, 59, 999);
+            if (monthDate > end) return false;
+          }
+          return true;
+        })
         .map((sheetRow) => sheetRowToBill(sheetRow, tenant));
     });
 
     if (allBills.length === 0) return;
 
-    const first = tenantMap.values().next().value;
     printBillingReport({
-      tenantName: first ? "All Tenants" : "Billing",
+      tenantName: "All Tenants",
       unitCode: "Portfolio",
       fromDate,
       toDate,
@@ -188,7 +191,7 @@ export function BillingPage() {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => setIsInvoiceOpen(true)}
             disabled={!billingAnchorMonth}
             className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -218,9 +221,9 @@ export function BillingPage() {
       )}
 
       {isLoading && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12" aria-hidden>
-          <div className="h-[640px] animate-pulse rounded-xl bg-gray-100 lg:col-span-7" />
-          <div className="h-[640px] animate-pulse rounded-xl bg-gray-100 lg:col-span-5" />
+        <div className="space-y-4" aria-hidden>
+          <div className="h-28 animate-pulse rounded-xl bg-gray-100" />
+          <div className="h-[480px] animate-pulse rounded-xl bg-gray-100" />
         </div>
       )}
 
@@ -233,40 +236,33 @@ export function BillingPage() {
       )}
 
       {!isLoading && !isError && (
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
-          <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:col-span-7">
-            <BillingTable
-              rows={filteredRows}
-              selectedRow={selectedRowData}
-              onSelectRow={setSelectedRow}
-            />
-          </div>
-
-          <div className="min-w-0 lg:col-span-5">
-            {selectedRowData ? (
-              <BillingDetails
-                tenantName={selectedRowData.tenantName}
-                unitCode={selectedRowData.unitCode}
-                room={selectedRowData.room}
-                fromDate={fromDate}
-                toDate={toDate}
-                bills={tenantBills}
-                onExportPdf={handleExportSelected}
-              />
-            ) : (
-              <BillingDetailPlaceholder />
-            )}
-          </div>
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <BillingTable
+            rows={filteredRows}
+            selectedRow={selectedRow}
+            onSelectRow={handleSelectRow}
+          />
         </div>
       )}
 
       <InvoiceModal
-        open={isModalOpen}
+        open={isInvoiceOpen}
         selectedMonth={billingAnchorMonth}
         tenants={tenants}
         billingRows={billingRows}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => setIsInvoiceOpen(false)}
         onSuccess={handleBillGenerated}
+      />
+
+      <BillingPreviewModal
+        open={isPreviewOpen && selectedRow != null}
+        tenantName={selectedRow?.tenantName ?? ""}
+        unitCode={selectedRow?.unitCode ?? ""}
+        fromDate={fromDate}
+        toDate={toDate}
+        bills={tenantBills}
+        onClose={handleClosePreview}
+        onExportPdf={handleExportSelected}
       />
     </AppShell>
   );

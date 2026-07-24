@@ -34,6 +34,15 @@ export interface BillingPeriodSummary {
   status: BillPaymentStatus;
 }
 
+/** Tenant-scoped billing summary for preview / export views. */
+export interface TenantBillingSummary extends BillingPeriodSummary {
+  tenantName: string;
+  unitCode: string;
+  room: number;
+  statementPeriod: string;
+  bills: Bill[];
+}
+
 export interface BillingDashboardSummary {
   totalCollected: number;
   paymentCount: number;

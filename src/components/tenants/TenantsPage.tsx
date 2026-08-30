@@ -2,17 +2,16 @@
 
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AddTenantModal } from "@/components/tenants/AddTenantModal";
 import { TenantDetails } from "@/components/tenants/TenantDetails";
 import { TenantDetailPlaceholder } from "@/components/tenants/TenantDetailPlaceholder";
 import { TenantsTable } from "@/components/tenants/TenantsTable";
 import type { TenantFormData } from "@/components/tenants/types";
-import { MonthSelect } from "@/components/dashboard/MonthSelect";
 import { AppShell } from "@/components/layout/AppShell";
 import {
   findTenantBillingRow,
-  getBillingMonthOptions,
   getDefaultBillingMonth,
   joinTenantsWithBilling,
   type TenantTableRow,
@@ -35,6 +34,7 @@ import {
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
 export function TenantsPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [selectedMonth, setSelectedMonth] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -66,11 +66,6 @@ export function TenantsPage() {
   );
 
   const canAddTenant = tenants ? hasVacantRoom(tenants) : false;
-
-  const monthOptions = useMemo(
-    () => (billingRows ? getBillingMonthOptions(billingRows) : []),
-    [billingRows],
-  );
 
   useEffect(() => {
     if (!billingRows?.length || selectedMonth) return;
@@ -181,19 +176,17 @@ export function TenantsPage() {
     printTenantReport(tenantView);
   };
 
+  const handleBillingSummaryClick = () => {
+    if (!selectedTenantRow) return;
+    router.push(`/billing?room=${selectedTenantRow.Room}`);
+  };
+
   return (
     <AppShell>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-3xl font-bold text-navy">Tenants</h1>
 
         <div className="flex flex-wrap items-center gap-3">
-          <MonthSelect
-            months={monthOptions}
-            value={selectedMonth}
-            onChange={setSelectedMonth}
-            disabled={isLoading || monthOptions.length === 0}
-          />
-
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}
@@ -259,6 +252,7 @@ export function TenantsPage() {
                     : null
                 }
                 onExportPdf={handleExportPdf}
+                onBillingSummaryClick={handleBillingSummaryClick}
               />
             ) : (
               <TenantDetailPlaceholder />

@@ -35,7 +35,7 @@ export function TenantsTable({
   if (activeTenants.length === 0) {
     return (
       <p className="py-12 text-center text-sm text-gray-500">
-        No active tenants for this month.
+        No active tenants yet.
       </p>
     );
   }
@@ -50,10 +50,7 @@ export function TenantsTable({
             </th>
             <th className="px-4 py-3.5 text-sm font-semibold text-navy">Rent</th>
             <th className="px-4 py-3.5 text-sm font-semibold text-navy">
-              Lease Start
-            </th>
-            <th className="px-4 py-3.5 text-sm font-semibold text-navy">
-              Move-in Date
+              Lease Start &amp; Move-in Date
             </th>
             <th className="px-5 py-3.5 text-sm font-semibold text-navy">
               Status
@@ -84,10 +81,14 @@ export function TenantsTable({
                   {formatExpenseAmount(tenant.Rent)}
                 </td>
                 <td className="px-4 py-3.5 text-gray-600">
-                  {formatTableDate(tenant.LeaseStart || tenant.MoveIn)}
-                </td>
-                <td className="px-4 py-3.5 text-gray-600">
-                  {formatTableDate(tenant.MoveIn)}
+                  <p>{formatTableDate(tenant.LeaseStart || tenant.MoveIn)}</p>
+                  {tenant.MoveIn &&
+                    tenant.LeaseStart &&
+                    tenant.LeaseStart !== tenant.MoveIn && (
+                      <p className="mt-0.5 text-xs text-gray-400">
+                        Move-in {formatTableDate(tenant.MoveIn)}
+                      </p>
+                    )}
                 </td>
                 <td className="px-5 py-3.5">
                   <span

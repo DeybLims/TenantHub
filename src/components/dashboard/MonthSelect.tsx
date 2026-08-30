@@ -6,6 +6,8 @@ interface MonthSelectProps {
   value: string;
   onChange: (month: string) => void;
   disabled?: boolean;
+  /** Show "This Month" instead of the month label when the latest month is selected. */
+  useThisMonthLabel?: boolean;
 }
 
 export function MonthSelect({
@@ -13,7 +15,10 @@ export function MonthSelect({
   value,
   onChange,
   disabled,
+  useThisMonthLabel = false,
 }: MonthSelectProps) {
+  const latestMonth = months.at(-1)?.value;
+
   return (
     <div className="relative">
       <Calendar
@@ -29,7 +34,9 @@ export function MonthSelect({
       >
         {months.map((month) => (
           <option key={month.value} value={month.value}>
-            {month.label}
+            {useThisMonthLabel && month.value === latestMonth
+              ? "This Month"
+              : month.label}
           </option>
         ))}
       </select>

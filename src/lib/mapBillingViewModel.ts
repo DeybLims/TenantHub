@@ -78,6 +78,7 @@ export function sheetRowToBill(
     amountPaid,
     balance,
     status: toPaymentStatus(String(row.Status ?? "")),
+    datePaid: row.DatePaid ? String(row.DatePaid) : null,
     notes: row.Notes ? String(row.Notes) : "",
   };
 }
@@ -135,6 +136,28 @@ export function formatStatementPeriod(fromDate: string, toDate: string): string 
   };
   if (fromDate && toDate) return `${format(fromDate)} – ${format(toDate)}`;
   return format(fromDate || toDate);
+}
+
+/** Compact uppercase label for invoice headers (e.g. JULY - AUGUST 2026). */
+export function formatStatementPeriodCompact(
+  fromDate: string,
+  toDate: string,
+): string {
+  if (!fromDate && !toDate) return "ALL PERIODS";
+
+  const formatMonth = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value.toUpperCase();
+    return date.toLocaleDateString("en-US", { month: "long" }).toUpperCase();
+  };
+
+  const to = new Date(toDate || fromDate);
+  const year = Number.isNaN(to.getTime()) ? "" : String(to.getFullYear());
+  const fromMonth = formatMonth(fromDate);
+  const toMonth = formatMonth(toDate || fromDate);
+
+  if (fromMonth === toMonth) return `${fromMonth} ${year}`.trim();
+  return `${fromMonth} - ${toMonth} ${year}`.trim();
 }
 
 export function formatBillDateBlock(dateValue: string): {

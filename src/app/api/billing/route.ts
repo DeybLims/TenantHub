@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isSupabaseConfigured } from "@/lib/dataSource";
+import {
+  generateSupabaseBill,
+  updateSupabaseBill,
+} from "@/lib/supabase/repository";
+import type { GenerateBillPayload, UpdateBillPayload } from "@/types/billing";
 
 const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
@@ -6,7 +12,29 @@ const GOOGLE_APPS_SCRIPT_URL =
 
 export async function POST(request: NextRequest) {
   try {
-    const body: unknown = await request.json();
+    const body = (await request.json()) as {
+      action?: string;
+      data?: GenerateBillPayload | UpdateBillPayload;
+    };
+
+    if (isSupabaseConfigured()) {
+      if (body.action === "generateBill" && body.data) {
+        const result = await generateSupabaseBill(body.data as GenerateBillPayload);
+        const status = result.success ? 200 : 400;
+        return NextResponse.json(result, { status });
+      }
+
+      if (body.action === "updateBill" && body.data) {
+        const result = await updateSupabaseBill(body.data as UpdateBillPayload);
+        const status = result.success ? 200 : 400;
+        return NextResponse.json(result, { status });
+      }
+
+      return NextResponse.json(
+        { success: false, message: "Invalid payload execution action" },
+        { status: 400 },
+      );
+    }
 
     const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
       method: "POST",
@@ -36,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to reach Sheets API";
+      error instanceof Error ? error.message : "Failed to update billing";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }

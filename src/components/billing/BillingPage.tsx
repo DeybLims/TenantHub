@@ -1,21 +1,23 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CloudDownload, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BillingPreviewModal } from "@/components/billing/BillingPreviewModal";
 import { BillingSummaryWidgets } from "@/components/billing/BillingSummaryWidgets";
 import { BillingTable } from "@/components/billing/BillingTable";
 import { InvoiceModal } from "@/components/billing/InvoiceModal";
+import { PayBalanceModal } from "@/components/billing/PayBalanceModal";
 import { AppShell } from "@/components/layout/AppShell";
 import { buildBillingTableRows } from "@/lib/buildBillingRows";
 import {
+  aggregateBillingRowsByTenant,
   computeBillingDashboardSummary,
   filterBillingRowsByDateRange,
 } from "@/lib/billingSummary";
 import {
   buildBillsForRoom,
-  sheetRowToBill,
   summarizeBills,
 } from "@/lib/mapBillingViewModel";
 import { billingMonthToDateInput } from "@/lib/months";
@@ -26,7 +28,7 @@ import {
   getMockBillingRows,
   getMockTenants,
 } from "@/services/api";
-import type { BillingTableRow } from "@/types/billing";
+import type { Bill, BillingTableRow } from "@/types/billing";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
@@ -36,15 +38,19 @@ function defaultDateRange(month: string): { from: string; to: string } {
   const date = new Date(base);
   const year = date.getFullYear();
   const monthIndex = date.getMonth();
-  const from = new Date(year, monthIndex, 1).toISOString().slice(0, 10);
-  const to = new Date(year, monthIndex + 1, 0).toISOString().slice(0, 10);
+  const from = new Date(year, monthIndex, 15).toISOString().slice(0, 10);
+  const to = new Date(year, monthIndex + 1, 15).toISOString().slice(0, 10);
   return { from, to };
 }
 
 export function BillingPage() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const focusRoom = searchParams.get("room");
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isPayBalanceOpen, setIsPayBalanceOpen] = useState(false);
+  const [payBalanceBill, setPayBalanceBill] = useState<Bill | null>(null);
   const [selectedRow, setSelectedRow] = useState<BillingTableRow | null>(null);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -80,7 +86,7 @@ export function BillingPage() {
     setToDate(range.to);
   }, [billingRows, billingAnchorMonth]);
 
-  const filteredRows = useMemo(() => {
+  const billsInRange = useMemo(() => {
     if (!billingRows.length) return [];
 
     const months = [
@@ -106,9 +112,14 @@ export function BillingPage() {
     );
   }, [billingRows, tenants, fromDate, toDate]);
 
+  const filteredRows = useMemo(
+    () => aggregateBillingRowsByTenant(billsInRange),
+    [billsInRange],
+  );
+
   const dashboardSummary = useMemo(
-    () => computeBillingDashboardSummary(filteredRows),
-    [filteredRows],
+    () => computeBillingDashboardSummary(billsInRange),
+    [billsInRange],
   );
 
   const tenantBills = useMemo(() => {
@@ -126,6 +137,16 @@ export function BillingPage() {
   const isError = tenantsQuery.isError || billingQuery.isError;
   const error = tenantsQuery.error ?? billingQuery.error;
 
+  useEffect(() => {
+    if (!focusRoom || filteredRows.length === 0) return;
+    const roomNumber = Number(focusRoom);
+    const match = filteredRows.find((row) => row.room === roomNumber);
+    if (match) {
+      setSelectedRow(match);
+      setIsPreviewOpen(true);
+    }
+  }, [focusRoom, filteredRows]);
+
   const handleBillGenerated = () => {
     void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -140,6 +161,18 @@ export function BillingPage() {
     setIsPreviewOpen(false);
   };
 
+  const handlePayBalance = (bill: Bill) => {
+    setPayBalanceBill(bill);
+    setIsPayBalanceOpen(true);
+  };
+
+  const handlePayBalanceSuccess = () => {
+    void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    setIsPayBalanceOpen(false);
+    setPayBalanceBill(null);
+  };
+
   const handleExportSelected = () => {
     if (!selectedRow) return;
     printBillingReport({
@@ -149,47 +182,6 @@ export function BillingPage() {
       toDate,
       bills: tenantBills,
       periodSummary: summarizeBills(tenantBills),
-    });
-  };
-
-  const handleExportAll = () => {
-    const uniqueBills = new Map<string, ReturnType<typeof sheetRowToBill>>();
-
-    for (const row of filteredRows) {
-      const tenant = tenants.find((item) => item.Room === row.room);
-      for (const sheetRow of billingRows) {
-        if (Number(sheetRow.Room) !== row.room) continue;
-
-        const monthDate = new Date(String(sheetRow.Month));
-        if (!Number.isNaN(monthDate.getTime())) {
-          if (fromDate && monthDate < new Date(fromDate)) continue;
-          if (toDate) {
-            const end = new Date(toDate);
-            end.setHours(23, 59, 59, 999);
-            if (monthDate > end) continue;
-          }
-        }
-
-        const bill = sheetRowToBill(sheetRow, tenant);
-        uniqueBills.set(bill.id, bill);
-      }
-    }
-
-    const allBills = Array.from(uniqueBills.values()).sort(
-      (a, b) =>
-        new Date(b.billingMonth).getTime() - new Date(a.billingMonth).getTime() ||
-        a.room - b.room,
-    );
-
-    if (allBills.length === 0) return;
-
-    printBillingReport({
-      tenantName: "All Tenants",
-      unitCode: "Portfolio",
-      fromDate,
-      toDate,
-      bills: allBills,
-      periodSummary: summarizeBills(allBills),
     });
   };
 
@@ -207,15 +199,6 @@ export function BillingPage() {
           >
             <FileText className="h-4 w-4" aria-hidden />
             Generate Bill
-          </button>
-          <button
-            type="button"
-            onClick={handleExportAll}
-            disabled={filteredRows.length === 0}
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <CloudDownload className="h-4 w-4" aria-hidden />
-            Export All to PDF
           </button>
         </div>
       </div>
@@ -251,6 +234,8 @@ export function BillingPage() {
             rows={filteredRows}
             selectedRow={selectedRow}
             onSelectRow={handleSelectRow}
+            fromDate={fromDate}
+            toDate={toDate}
           />
         </div>
       )}
@@ -268,11 +253,24 @@ export function BillingPage() {
         open={isPreviewOpen && selectedRow != null}
         tenantName={selectedRow?.tenantName ?? ""}
         unitCode={selectedRow?.unitCode ?? ""}
+        bills={tenantBills}
         fromDate={fromDate}
         toDate={toDate}
-        bills={tenantBills}
         onClose={handleClosePreview}
         onExportPdf={handleExportSelected}
+        onPayBalance={handlePayBalance}
+      />
+
+      <PayBalanceModal
+        open={isPayBalanceOpen}
+        bill={payBalanceBill}
+        fromDate={fromDate}
+        toDate={toDate}
+        onClose={() => {
+          setIsPayBalanceOpen(false);
+          setPayBalanceBill(null);
+        }}
+        onSuccess={handlePayBalanceSuccess}
       />
     </AppShell>
   );

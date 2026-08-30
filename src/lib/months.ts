@@ -123,4 +123,27 @@ export function resolveBillingMonthValue(
   return fallback;
 }
 
+/** Display label for billing table period column (e.g. Jul 1 - Aug 30, 2026). */
+export function formatBillingPeriodRange(month: string): string {
+  const parsed = parseBillingMonthDate(month);
+  if (!parsed) return formatMonthLabel(month);
+
+  const year = parsed.getFullYear();
+  const monthIndex = parsed.getMonth();
+  const from = new Date(year, monthIndex - 1, 1);
+  const to = new Date(year, monthIndex + 1, 0);
+
+  const fromLabel = from.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+  const toLabel = to.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return `${fromLabel} - ${toLabel}`;
+}
+
 export { MONTH_NAMES };

@@ -24,6 +24,7 @@ export interface Bill {
   amountPaid: number;
   balance: number;
   status: BillPaymentStatus;
+  datePaid?: string | null;
   notes?: string;
 }
 

@@ -56,53 +56,6 @@ function SectionBanner({
   );
 }
 
-function DetailTable({
-  headers,
-  rows,
-}: {
-  headers: string[];
-  rows: Array<{ cells: string[]; emphasis?: boolean }>;
-}) {
-  return (
-    <table className="w-full border-collapse text-sm">
-      <thead>
-        <tr className="bg-blue-100 text-left text-[11px] font-bold uppercase tracking-wide text-blue-900">
-          {headers.map((header) => (
-            <th
-              key={header}
-              className="border border-gray-200 px-3 py-2 last:text-right"
-            >
-              {header}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr
-            key={row.cells.join("-")}
-            className={row.emphasis ? "bg-slate-50 font-semibold" : undefined}
-          >
-            {row.cells.map((cell, index) => (
-              <td
-                key={`${row.cells[0]}-${headers[index]}`}
-                className={`border border-gray-200 px-3 py-2 text-navy ${
-                  index === row.cells.length - 1 ? "text-right" : ""
-                }`}
-              >
-                {cell}
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-/**
- * Print-ready utility expense export (mirrors billing report structure).
- */
 export function ExpenseExportReport({
   selectedMonth,
   record,
@@ -119,9 +72,6 @@ export function ExpenseExportReport({
     minute: "2-digit",
     hour12: true,
   });
-
-  const meralcoTotal = record.meralcoBillAmount;
-  const miwdTotal = record.miwdResidential + record.miwdCommercial;
   const combinedNet = analytics.netElectricityProfit + analytics.netWaterProfit;
 
   return (
@@ -161,15 +111,6 @@ export function ExpenseExportReport({
           <p className="mt-1 text-sm text-gray-500">
             Master utility bills, true rates, and tenant distribution
           </p>
-          <span
-            className={`mt-3 inline-flex rounded-full px-3 py-0.5 text-xs font-semibold ${
-              record.paidToUtility
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-red-100 text-red-700"
-            }`}
-          >
-            {record.paidToUtility ? "Paid to Utility" : "Unpaid to Utility"}
-          </span>
         </div>
         <div className="rounded-lg border border-gray-200 px-4 py-3 text-right">
           <p className="text-xs font-medium text-gray-500">Billing Month</p>
@@ -183,15 +124,11 @@ export function ExpenseExportReport({
         </h3>
         <SummaryRow
           label="Meralco Master Bill"
-          value={formatExpenseAmount(meralcoTotal)}
+          value={formatExpenseAmount(record.meralcoBillAmount)}
         />
         <SummaryRow
-          label="MIWD Total (Res + Com)"
-          value={formatExpenseAmount(miwdTotal)}
-        />
-        <SummaryRow
-          label="JJC Calculated Amount"
-          value={formatExpenseAmount(derived.jjcCalculatedAmount)}
+          label="MIWD Master Bill"
+          value={formatExpenseAmount(record.miwdBillAmount)}
         />
         <SummaryRow
           label="Net Electricity Profit"
@@ -217,162 +154,74 @@ export function ExpenseExportReport({
       </section>
 
       <SectionBanner
-        title="Master Utility Inputs"
-        icon={<FileText className="h-4 w-4 shrink-0" aria-hidden />}
-      >
-        <div className="space-y-4">
-          <DetailTable
-            headers={["Utility", "Amount / Base", "Consumption", "True Rate"]}
-            rows={[
-              {
-                cells: [
-                  "Meralco",
-                  formatExpenseAmount(record.meralcoBillAmount),
-                  `${record.meralcoConsumption.toLocaleString("en-PH")} kWh`,
-                  derived.meralcoTrueRate > 0
-                    ? `₱${derived.meralcoTrueRate.toFixed(2)} /kWh`
-                    : "—",
-                ],
-              },
-              {
-                cells: [
-                  "MIWD Residential",
-                  formatExpenseAmount(record.miwdResidential),
-                  "—",
-                  "—",
-                ],
-              },
-              {
-                cells: [
-                  "MIWD Commercial",
-                  formatExpenseAmount(record.miwdCommercial),
-                  "—",
-                  "—",
-                ],
-              },
-              {
-                cells: [
-                  "MIWD Combined",
-                  formatExpenseAmount(miwdTotal),
-                  `${record.miwdConsumption.toLocaleString("en-PH")} m³`,
-                  derived.miwdTrueRate > 0
-                    ? `₱${derived.miwdTrueRate.toFixed(2)} /m³`
-                    : "—",
-                ],
-                emphasis: true,
-              },
-              {
-                cells: [
-                  "Special Water Rate",
-                  `₱${record.miwdSpecialRate.toFixed(2)} /m³`,
-                  "—",
-                  "—",
-                ],
-              },
-            ]}
-          />
-
-          <DetailTable
-            headers={[
-              "JJC Meter",
-              "Previous",
-              "Current",
-              "Consumption",
-              "Calculated Amount",
-            ]}
-            rows={[
-              {
-                cells: [
-                  "JJC Consumption",
-                  record.jjcPreviousReading.toLocaleString("en-PH"),
-                  record.jjcCurrentReading.toLocaleString("en-PH"),
-                  `${derived.jjcConsumption.toLocaleString("en-PH")} kWh`,
-                  formatExpenseAmount(derived.jjcCalculatedAmount),
-                ],
-              },
-            ]}
-          />
-        </div>
-      </SectionBanner>
-
-      <SectionBanner
-        title="Electricity (Meralco) Distribution"
+        title="Electricity (Meralco)"
         icon={<Zap className="h-4 w-4 shrink-0" aria-hidden />}
       >
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <SummaryRow
-            label="Selling Rate"
-            value={`₱${derived.electricitySellingRate.toFixed(2)} /kWh`}
-          />
-          <SummaryRow
             label="JJC Consumption"
-            value={`${derived.jjcConsumption.toLocaleString("en-PH")} kWh`}
+            value={formatExpenseAmount(derived.jjcCalculatedAmount)}
           />
           <SummaryRow
-            label="Total Tenant Consumption"
-            value={`${analytics.tenantTotalConsumptionKwh.toLocaleString("en-PH")} kWh`}
+            label="Motor Power Usage"
+            value={formatExpenseAmount(derived.motorCalculatedAmount)}
           />
           <SummaryRow
-            label="Total Tenant Billed"
-            value={formatExpenseAmount(analytics.tenantTotalBilled)}
+            label="Paid Tenant Billed"
+            value={formatExpenseAmount(analytics.paidTenantBilled)}
+            valueClass="text-right text-base font-bold text-navy"
           />
           <SummaryRow
             label="Total Tenant Cost"
             value={formatExpenseAmount(analytics.tenantElectricityTrueCost)}
           />
+        </div>
+      </SectionBanner>
+
+      <SectionBanner
+        title="Water (MIWD)"
+        icon={<Droplet className="h-4 w-4 shrink-0" aria-hidden />}
+      >
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
           <SummaryRow
-            label="Net Electricity Profit"
-            value={formatPesoDecimal(analytics.netElectricityProfit)}
-            valueClass={
-              analytics.netElectricityProfit >= 0
-                ? "text-emerald-600"
-                : "text-red-500"
-            }
+            label="Residential Base"
+            value={formatExpenseAmount(derived.miwdResidentialAmount)}
+          />
+          <SummaryRow
+            label="Commercial Base"
+            value={formatExpenseAmount(derived.miwdCommercialAmount)}
+          />
+          <SummaryRow
+            label="Pumped Water Charge"
+            value={formatExpenseAmount(derived.pumpedWaterAmount)}
+          />
+          <SummaryRow
+            label="Total Tenant Cost"
+            value={formatExpenseAmount(analytics.trueTenantWaterCost)}
           />
         </div>
       </SectionBanner>
 
       <SectionBanner
-        title="Water (MIWD) Distribution"
-        icon={<Droplet className="h-4 w-4 shrink-0" aria-hidden />}
+        title="Master Utility Inputs"
+        icon={<FileText className="h-4 w-4 shrink-0" aria-hidden />}
       >
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <SummaryRow
-            label="Standard Base Rate"
-            value={
-              derived.miwdTrueRate > 0
-                ? `₱${derived.miwdTrueRate.toFixed(2)} /m³`
-                : "—"
-            }
+            label="Meralco Paid This Month"
+            value={formatExpenseAmount(record.meralcoPaidThisMonth)}
           />
           <SummaryRow
-            label="Residential Base"
-            value={formatExpenseAmount(analytics.miwdResidentialAmount)}
+            label="Meralco Balance"
+            value={formatExpenseAmount(derived.meralcoBalance)}
           />
           <SummaryRow
-            label="Commercial Base"
-            value={formatExpenseAmount(analytics.miwdCommercialAmount)}
+            label="MIWD Paid This Month"
+            value={formatExpenseAmount(record.miwdPaidThisMonth)}
           />
           <SummaryRow
-            label="Total Tenant Consumption"
-            value={`${analytics.tenantTotalWaterM3.toLocaleString("en-PH")} m³`}
-          />
-          <SummaryRow
-            label="Standard Base Revenue"
-            value={formatExpenseAmount(analytics.tenantWaterRevenue)}
-          />
-          <SummaryRow
-            label="True Tenant Cost"
-            value={formatExpenseAmount(analytics.trueTenantWaterCost)}
-          />
-          <SummaryRow
-            label="Net Water Profit"
-            value={formatPesoDecimal(analytics.netWaterProfit)}
-            valueClass={
-              analytics.netWaterProfit >= 0
-                ? "text-emerald-600"
-                : "text-red-500"
-            }
+            label="MIWD Balance"
+            value={formatExpenseAmount(derived.miwdBalance)}
           />
         </div>
       </SectionBanner>

@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import {
   BarChart3,
   Building2,
@@ -38,26 +37,6 @@ function ReportField({
       </div>
       <p className="text-sm font-medium text-navy">{value || "—"}</p>
     </div>
-  );
-}
-
-function ReportCard({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string;
-  icon: typeof User;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5">
-      <div className="mb-4 flex items-center gap-2 border-b border-gray-100 pb-3">
-        <Icon className="h-4 w-4 text-blue-500" aria-hidden />
-        <h3 className="text-sm font-bold text-blue-500">{title}</h3>
-      </div>
-      {children}
-    </section>
   );
 }
 
@@ -101,30 +80,34 @@ export function TenantExportReport({
               TENANT INFORMATION REPORT
             </h1>
             <p className="mt-1 text-xs text-gray-500">
-              Generated on {timestamp}
+              Generated on: {timestamp}
             </p>
           </div>
         </div>
       </header>
 
-      <div className="mb-6 flex items-center gap-4">
-        <div
-          className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-blue-500 text-lg font-bold text-white"
-          aria-hidden
-        >
-          {getTenantInitials(tenant.name)}
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div
+            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-blue-500 text-lg font-bold text-white"
+            aria-hidden
+          >
+            {getTenantInitials(tenant.name)}
+          </div>
+          <div>
+            <h2 className="text-xl font-bold uppercase text-navy">
+              {tenant.name}
+            </h2>
+            <p className="text-sm text-gray-500">Unit: {tenant.unitCode || "—"}</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-xl font-bold uppercase text-navy">{tenant.name}</h2>
-          <p className="text-sm text-gray-500">Unit: {tenant.unitCode || "—"}</p>
-          <span className="mt-2 inline-flex rounded-full border border-emerald-500 px-3 py-0.5 text-xs font-semibold text-emerald-600">
-            Active Tenant
-          </span>
-        </div>
+        <span className="inline-flex shrink-0 rounded-full border border-emerald-500 px-3 py-1 text-xs font-semibold text-emerald-600">
+          Active Tenant
+        </span>
       </div>
 
       <div className="space-y-5">
-        <ReportCard title="Contact Information" icon={User}>
+        <section className="rounded-lg border border-gray-200 bg-white p-5">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <ReportField icon={User} label="Full Name" value={tenant.name} />
             <ReportField
@@ -146,39 +129,47 @@ export function TenantExportReport({
               value={tenant.emergencyNumber}
             />
           </div>
-        </ReportCard>
 
-        <ReportCard title="Unit Information" icon={Building2}>
-          <div className="divide-y divide-gray-100">
-            <div className="flex justify-between py-2.5 text-sm">
-              <span className="text-gray-500">Lease Start</span>
-              <span className="font-medium">
-                {tenant.leaseStart ? formatLongDate(tenant.leaseStart) : "—"}
-              </span>
+          <div className="mt-5 border-t border-blue-500 pt-4">
+            <div className="mb-4 flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-blue-500" aria-hidden />
+              <h3 className="text-sm font-bold text-navy">Unit Information</h3>
             </div>
-            <div className="flex justify-between py-2.5 text-sm">
-              <span className="text-gray-500">Move-in Date</span>
-              <span className="font-medium">
-                {tenant.moveInDate ? formatLongDate(tenant.moveInDate) : "—"}
-              </span>
-            </div>
-            <div className="flex justify-between py-2.5 text-sm">
-              <span className="text-gray-500">Base Rent</span>
-              <span className="font-medium">
-                {formatExpenseAmount(tenant.baseRent)}
-              </span>
-            </div>
-            <div className="flex justify-between py-2.5 text-sm">
-              <span className="text-gray-500">Deposit</span>
-              <span className="font-medium">
-                {formatExpenseAmount(tenant.deposit)}
-              </span>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <ReportField
+                icon={User}
+                label="Lease Start"
+                value={
+                  tenant.leaseStart ? formatLongDate(tenant.leaseStart) : ""
+                }
+              />
+              <ReportField
+                icon={User}
+                label="Move-in Date"
+                value={
+                  tenant.moveInDate ? formatLongDate(tenant.moveInDate) : ""
+                }
+              />
+              <ReportField
+                icon={User}
+                label="Base Rent"
+                value={formatExpenseAmount(tenant.baseRent)}
+              />
+              <ReportField
+                icon={User}
+                label="Deposit"
+                value={formatExpenseAmount(tenant.deposit)}
+              />
             </div>
           </div>
-        </ReportCard>
+        </section>
 
-        <ReportCard title="Billing Summary" icon={BarChart3}>
-          <div className="grid grid-cols-1 gap-0 divide-y divide-gray-100 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        <section className="rounded-lg border border-gray-200 bg-white p-5">
+          <div className="mb-4 flex items-center gap-2 border-b border-gray-100 pb-3">
+            <BarChart3 className="h-4 w-4 text-blue-500" aria-hidden />
+            <h3 className="text-sm font-bold text-blue-500">Billing Summary</h3>
+          </div>
+          <div className="grid grid-cols-1 divide-y divide-gray-100 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
             <div className="px-2 py-3 sm:pr-4">
               <p className="text-xs text-gray-500">Current Balance</p>
               <p className="mt-1 text-2xl font-bold text-red-600">
@@ -193,17 +184,21 @@ export function TenantExportReport({
                 {tenant.status}
               </p>
             </div>
-            <div className="border-t border-gray-100 px-2 py-3 sm:col-span-1 sm:border-t-0 sm:pr-4">
+            <div className="border-t border-gray-100 px-2 py-3 sm:border-t-0 sm:pr-4">
               <p className="text-xs text-gray-500">Last Payment</p>
-              <p className="mt-1 font-semibold text-navy">
-                {tenant.lastPaymentDate
-                  ? formatLongDate(tenant.lastPaymentDate)
-                  : "—"}
-              </p>
-              {tenant.lastPaymentAmount > 0 && (
-                <p className="text-sm text-gray-500">
-                  {formatPesoDecimal(tenant.lastPaymentAmount)}
-                </p>
+              {tenant.lastPaymentAmount > 0 ? (
+                <>
+                  <p className="mt-1 text-lg font-bold text-navy">
+                    {formatPesoDecimal(tenant.lastPaymentAmount)}
+                  </p>
+                  {tenant.lastPaymentDate && (
+                    <p className="text-sm text-gray-500">
+                      {formatLongDate(tenant.lastPaymentDate)}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="mt-1 font-semibold text-navy">—</p>
               )}
             </div>
             <div className="px-2 py-3 sm:pl-4">
@@ -220,13 +215,17 @@ export function TenantExportReport({
               )}
             </div>
           </div>
-        </ReportCard>
+        </section>
 
-        <ReportCard title="Notes" icon={NotebookPen}>
+        <section className="rounded-lg border border-gray-200 bg-white p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <NotebookPen className="h-4 w-4 text-blue-500" aria-hidden />
+            <h3 className="text-sm font-bold text-navy">Notes</h3>
+          </div>
           <p className="text-sm italic text-gray-500">
             {tenant.notes.trim() || "Add notes here..."}
           </p>
-        </ReportCard>
+        </section>
       </div>
     </div>
   );

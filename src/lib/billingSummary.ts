@@ -1,4 +1,5 @@
 import { normalizeBillingStatusLabel } from "@/components/tenants/tenantStatusStyles";
+import { roundCurrency } from "@/lib/propertyBillingCalculations";
 import type { BillingDashboardSummary, BillingTableRow } from "@/types/billing";
 
 export interface BillingKpiSummary {
@@ -61,4 +62,66 @@ export function filterBillingRowsByDateRange(
     if (to && monthDate > to) return false;
     return true;
   });
+}
+
+/** One table row per tenant — totals all bills in the filtered range. */
+export function aggregateBillingRowsByTenant(
+  rows: BillingTableRow[],
+): BillingTableRow[] {
+  const byRoom = new Map<number, BillingTableRow[]>();
+
+  for (const row of rows) {
+    const roomRows = byRoom.get(row.room) ?? [];
+    roomRows.push(row);
+    byRoom.set(row.room, roomRows);
+  }
+
+  return Array.from(byRoom.entries())
+    .map(([room, roomRows]) => {
+      const sorted = [...roomRows].sort(
+        (a, b) => new Date(b.month).getTime() - new Date(a.month).getTime(),
+      );
+      const latest = sorted[0];
+      const totalDue = roundCurrency(
+        roomRows.reduce((sum, row) => sum + row.totalDue, 0),
+      );
+      const paid = roundCurrency(
+        roomRows.reduce((sum, row) => sum + row.paid, 0),
+      );
+      const balance = roundCurrency(Math.max(0, totalDue - paid));
+
+      let status = "Unpaid";
+      if (balance <= 0 && totalDue > 0) status = "Paid";
+      else if (paid > 0 && balance > 0) status = "Partial";
+
+      return {
+        ...latest,
+        room,
+        totalDue,
+        paid,
+        balance,
+        status,
+        month: latest.month,
+      };
+    })
+    .sort((a, b) => a.room - b.room);
+}
+
+export function formatBillingDateRange(fromDate: string, toDate: string): string {
+  const format = (value: string) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const fromLabel = format(fromDate);
+  const toLabel = format(toDate);
+
+  if (fromLabel && toLabel) return `${fromLabel} – ${toLabel}`;
+  return fromLabel || toLabel || "—";
 }

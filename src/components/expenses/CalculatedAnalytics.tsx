@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Droplet, Zap } from "lucide-react";
 import { formatExpenseAmount, formatPesoDecimal } from "@/lib/format";
-import { formatRate, formatUsage } from "@/lib/utilityDistributionSummary";
 import type { UtilityExpenseAnalytics } from "@/components/expenses/types";
 
 interface CalculatedAnalyticsProps {
@@ -18,7 +17,7 @@ function BlockHeader({
   iconClassName: string;
 }) {
   return (
-    <div className="mb-3 flex items-center gap-2 border-b border-gray-100 pb-3">
+    <div className="mb-4 flex items-center gap-2">
       <span
         className={`flex h-8 w-8 items-center justify-center rounded-full ${iconClassName}`}
       >
@@ -29,11 +28,31 @@ function BlockHeader({
   );
 }
 
-function AnalyticsRow({ label, value }: { label: string; value: string }) {
+function AnalyticsRow({
+  label,
+  value,
+  emphasize = false,
+  alignRight = false,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+  alignRight?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between gap-4 py-2 text-sm">
-      <span className="text-gray-600">{label}</span>
-      <span className="text-right font-medium text-navy">{value}</span>
+    <div
+      className={`flex items-center justify-between gap-4 border-b border-gray-50 py-2.5 text-sm last:border-0 ${
+        emphasize ? "rounded-lg bg-blue-50/60 px-3 font-semibold" : ""
+      }`}
+    >
+      <span className={emphasize ? "text-navy" : "text-gray-600"}>{label}</span>
+      <span
+        className={`min-w-[112px] tabular-nums ${
+          alignRight || emphasize ? "text-right" : ""
+        } font-medium text-navy ${emphasize ? "text-base font-bold" : ""}`}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -49,17 +68,19 @@ function ProfitBar({
 }) {
   const positive = amount >= 0;
   return (
-    <div className="mt-4 flex overflow-hidden rounded-md">
-      <div className="flex flex-1 items-center bg-emerald-50 px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-navy">
-        {label}
-      </div>
-      <div
-        className={`flex min-w-[100px] items-center justify-center px-3 py-2.5 text-sm font-bold text-white ${
-          positive ? "bg-emerald-400" : "bg-red-500"
-        }`}
-      >
-        {positive ? "+" : ""}
-        {value}
+    <div className="mt-5 overflow-hidden rounded-lg border border-emerald-100">
+      <div className="flex items-stretch">
+        <div className="flex flex-1 items-center bg-gradient-to-r from-emerald-50 to-emerald-100/70 px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-navy">
+          {label}
+        </div>
+        <div
+          className={`flex min-w-[112px] items-center justify-center px-4 py-3 text-sm font-bold text-white ${
+            positive ? "bg-emerald-400" : "bg-red-500"
+          }`}
+        >
+          {positive ? "+" : ""}
+          {value}
+        </div>
       </div>
     </div>
   );
@@ -67,7 +88,7 @@ function ProfitBar({
 
 function AnalyticsCard({ children }: { children: ReactNode }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
+    <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       {children}
     </section>
   );
@@ -92,23 +113,25 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
             iconClassName="bg-amber-100"
           />
           <AnalyticsRow
-            label="Selling Rate"
-            value={`${formatRate(derived.electricitySellingRate)} /kWh`}
-          />
-          <AnalyticsRow
             label="JJC Consumption"
-            value={`${formatUsage(derived.jjcConsumption)} kWh`}
+            value={formatExpenseAmount(derived.jjcCalculatedAmount)}
           />
           <AnalyticsRow
-            label="Total Tenant Billed"
-            value={formatExpenseAmount(analytics.tenantTotalBilled)}
+            label="Motor Power Usage"
+            value={formatExpenseAmount(derived.motorCalculatedAmount)}
+          />
+          <AnalyticsRow
+            label="Paid Tenant Billed"
+            value={formatExpenseAmount(analytics.paidTenantBilled)}
+            emphasize
+            alignRight
           />
           <AnalyticsRow
             label="Total Tenant Cost"
             value={formatExpenseAmount(analytics.tenantElectricityTrueCost)}
           />
           <ProfitBar
-            label="Net Electricity Profit"
+            label="NET ELECTRICITY PROFIT"
             value={formatPesoDecimal(analytics.netElectricityProfit)}
             amount={analytics.netElectricityProfit}
           />
@@ -121,27 +144,23 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
             iconClassName="bg-sky-100"
           />
           <AnalyticsRow
-            label="Standard Base Rate"
-            value={`${formatRate(derived.miwdTrueRate)} /m³`}
-          />
-          <AnalyticsRow
             label="Residential Base"
-            value={formatExpenseAmount(analytics.miwdResidentialAmount)}
+            value={formatExpenseAmount(derived.miwdResidentialAmount)}
           />
           <AnalyticsRow
             label="Commercial Base"
-            value={formatExpenseAmount(analytics.miwdCommercialAmount)}
+            value={formatExpenseAmount(derived.miwdCommercialAmount)}
           />
           <AnalyticsRow
-            label="Standard Base Revenue"
-            value={formatExpenseAmount(analytics.tenantWaterRevenue)}
+            label="Pumped Water Charge"
+            value={formatExpenseAmount(derived.pumpedWaterAmount)}
           />
           <AnalyticsRow
-            label="True Tenant Cost"
+            label="Total Tenant Cost"
             value={formatExpenseAmount(analytics.trueTenantWaterCost)}
           />
           <ProfitBar
-            label="Net Water Profit"
+            label="NET WATER PROFIT"
             value={formatPesoDecimal(analytics.netWaterProfit)}
             amount={analytics.netWaterProfit}
           />

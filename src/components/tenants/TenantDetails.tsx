@@ -1,11 +1,11 @@
 "use client";
 
 import {
-  BarChart3,
   Building2,
   Calendar,
+  ChevronRight,
+  FileText,
   Mail,
-  Pencil,
   Phone,
   Trash2,
   User,
@@ -20,7 +20,6 @@ import {
 import { buildTenantBillingSummary } from "@/lib/tenantBillingSummary";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import { getTenantInitials } from "@/lib/tenantInitials";
-import { normalizeBillingStatusLabel } from "@/components/tenants/tenantStatusStyles";
 import type { TenantFormData } from "@/components/tenants/types";
 import type { TenantTableRow } from "@/lib/joinTenantsBilling";
 import type { SheetRow } from "@/types/sheet";
@@ -33,6 +32,7 @@ export interface TenantDetailsProps {
   onCancel?: () => void;
   onDelete?: () => void;
   onExportPdf?: () => void;
+  onBillingSummaryClick?: () => void;
   isSaving?: boolean;
   isDeleting?: boolean;
   saveError?: string | null;
@@ -55,14 +55,6 @@ function formatCurrencyField(value: string | number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-}
-
-function billingStatusClass(status: string): string {
-  const label = normalizeBillingStatusLabel(status);
-  if (label === "Paid") return "text-emerald-500";
-  if (label === "Partial") return "text-orange-500";
-  if (label === "Unpaid") return "text-red-500";
-  return "text-gray-600";
 }
 
 function SectionHeading({
@@ -109,7 +101,7 @@ function IconField({
   );
 }
 
-function SummaryCell({
+function SummaryCard({
   label,
   children,
 }: {
@@ -117,9 +109,9 @@ function SummaryCell({
   children: ReactNode;
 }) {
   return (
-    <div className="border border-gray-200 bg-gray-50/60 p-3">
-      <p className="mb-1 text-xs font-medium text-gray-500">{label}</p>
-      <div className="text-sm">{children}</div>
+    <div className="flex-1 rounded-xl border border-gray-200 bg-gray-50/40 p-4">
+      <p className="mb-2 text-xs font-medium text-gray-500">{label}</p>
+      <div>{children}</div>
     </div>
   );
 }
@@ -132,6 +124,7 @@ export function TenantDetails({
   onCancel,
   onDelete,
   onExportPdf,
+  onBillingSummaryClick,
   isSaving = false,
   isDeleting = false,
   saveError = null,
@@ -217,39 +210,32 @@ export function TenantDetails({
 
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="relative border-b border-gray-100 px-5 py-5">
-        <button
-          type="button"
-          className="absolute right-4 top-4 rounded-md border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50"
-          aria-label="Edit tenant"
-        >
-          <Pencil className="h-4 w-4" />
-        </button>
-
-        <div className="flex items-start gap-4 pr-10">
-          <div
-            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-500 text-base font-bold text-white"
-            aria-hidden
-          >
-            {getTenantInitials(name || tenant.Name)}
+      <div className="border-b border-gray-100 px-5 py-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-500 text-base font-bold text-white"
+              aria-hidden
+            >
+              {getTenantInitials(name || tenant.Name)}
+            </div>
+            <div>
+              <h3 className="text-lg font-bold uppercase tracking-wide text-navy">
+                {name || tenant.Name}
+              </h3>
+              <p className="mt-0.5 text-sm text-gray-500">
+                Unit: {tenant.UnitCode || "—"}
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-lg font-bold uppercase tracking-wide text-navy">
-              {name || tenant.Name}
-            </h3>
-            <p className="mt-0.5 text-sm text-gray-500">
-              Unit: {tenant.UnitCode || "—"}
-            </p>
-            <span className="mt-2 inline-flex rounded-full border border-emerald-500 px-3 py-0.5 text-xs font-semibold text-emerald-600">
-              Active Tenant
-            </span>
-          </div>
+          <span className="inline-flex shrink-0 rounded-full border border-emerald-500 px-3 py-1 text-xs font-semibold text-emerald-600">
+            Active Tenant
+          </span>
         </div>
       </div>
 
       <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
         <section className="rounded-lg border border-gray-200 p-4">
-          <SectionHeading icon={User} title="Contact Information" />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <IconField icon={User} label="Full Name">
               <input
@@ -372,50 +358,55 @@ export function TenantDetails({
         </section>
 
         <section className="rounded-lg border border-gray-200 p-4">
-          <SectionHeading icon={BarChart3} title="Billing Summary" />
-          <div className="grid grid-cols-1 gap-0 overflow-hidden rounded-lg border border-gray-200 sm:grid-cols-2">
-            <SummaryCell label="Current Balance">
-              <p className="text-lg font-bold text-red-500">
-                {formatPesoDecimal(billingSummary.currentBalance)}
-              </p>
-            </SummaryCell>
-            <SummaryCell label="Status">
-              <p
-                className={`text-lg font-bold ${billingStatusClass(billingSummary.status)}`}
-              >
-                {normalizeBillingStatusLabel(billingSummary.status)}
-              </p>
-            </SummaryCell>
-            <SummaryCell label="Last Payment">
-              <p className="font-semibold text-navy">
-                {billingSummary.lastPaymentDate
-                  ? formatLongDate(billingSummary.lastPaymentDate)
-                  : "—"}
-              </p>
-              {billingSummary.lastPaymentAmount > 0 && (
-                <p className="mt-0.5 text-gray-500">
-                  {formatPesoDecimal(billingSummary.lastPaymentAmount)}
-                </p>
+          <button
+            type="button"
+            onClick={onBillingSummaryClick}
+            disabled={!onBillingSummaryClick}
+            className="group w-full rounded-lg text-left transition-colors hover:bg-slate-50/80 disabled:cursor-default disabled:hover:bg-transparent"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-blue-500" aria-hidden />
+                <h4 className="text-sm font-bold text-navy">Billing Summary</h4>
+              </div>
+              {onBillingSummaryClick && (
+                <ChevronRight
+                  className="h-4 w-4 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-500"
+                  aria-hidden
+                />
               )}
-            </SummaryCell>
-            <SummaryCell label="Next Due Date">
-              <p className="font-semibold text-navy">
-                {billingSummary.nextDueDate
-                  ? formatLongDate(billingSummary.nextDueDate)
-                  : "—"}
-              </p>
-              {billingSummary.daysUntilDue != null &&
-                billingSummary.daysUntilDue >= 0 && (
-                  <p className="mt-0.5 text-sm text-red-500">
-                    {billingSummary.daysUntilDue} days left
-                  </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <SummaryCard label="Current Balance">
+                <p className="text-2xl font-bold text-red-500">
+                  {formatPesoDecimal(billingSummary.currentBalance)}
+                </p>
+              </SummaryCard>
+              <SummaryCard label="Last Payment">
+                {billingSummary.lastPaymentAmount > 0 ? (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                    <span className="inline-flex rounded-full bg-emerald-500 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                      Paid
+                    </span>
+                    <p className="mt-2 text-2xl font-bold text-navy">
+                      {formatPesoDecimal(billingSummary.lastPaymentAmount)}
+                    </p>
+                    {billingSummary.lastPaymentDate && (
+                      <p className="mt-1 text-sm text-gray-500">
+                        {formatLongDate(billingSummary.lastPaymentDate)}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-navy">—</p>
                 )}
-            </SummaryCell>
-          </div>
+              </SummaryCard>
+            </div>
+          </button>
         </section>
 
         <section>
-          <h4 className="mb-2 text-sm font-bold text-navy">Notes</h4>
+          <SectionHeading icon={FileText} title="Notes" />
           <textarea
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
@@ -433,17 +424,7 @@ export function TenantDetails({
       </div>
 
       <div className="flex flex-col gap-3 border-t border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={isSaving || isDeleting || !onDelete}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Trash2 className="h-4 w-4" aria-hidden />
-          {isDeleting ? "Removing…" : "Remove Tenant"}
-        </button>
-
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        <div className="flex flex-wrap items-center gap-4">
           <button
             type="button"
             onClick={handleCancel}
@@ -452,6 +433,18 @@ export function TenantDetails({
           >
             Cancel
           </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isSaving || isDeleting || !onDelete}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+            {isDeleting ? "Removing…" : "Remove Tenant"}
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <button
             type="button"
             onClick={handleSave}

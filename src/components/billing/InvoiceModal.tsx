@@ -19,6 +19,7 @@ import {
   getWaterSellingRate,
   isCorrectionMonth,
   roundCurrency,
+  WATER_RATE_STANDARD,
 } from "@/lib/propertyBillingCalculations";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import { generateBill } from "@/services/api";
@@ -113,6 +114,21 @@ function ToggleSwitch({
   );
 }
 
+function billingDatesForMonth(selectedMonth: string): {
+  billingDate: string;
+  dueDate: string;
+} {
+  const base =
+    billingMonthToDateInput(selectedMonth) || new Date().toISOString().slice(0, 10);
+  const date = new Date(base);
+  const year = date.getFullYear();
+  const monthIndex = date.getMonth();
+  return {
+    billingDate: new Date(year, monthIndex, 15).toISOString().slice(0, 10),
+    dueDate: new Date(year, monthIndex, 21).toISOString().slice(0, 10),
+  };
+}
+
 export function InvoiceModal({
   open,
   selectedMonth,
@@ -143,6 +159,8 @@ export function InvoiceModal({
   const [notes, setNotes] = useState("");
   const [electricitySpecial, setElectricitySpecial] = useState(false);
   const [electricityRate, setElectricityRate] = useState(ELECTRICITY_SELLING_RATE);
+  const [waterSpecial, setWaterSpecial] = useState(false);
+  const [waterRate, setWaterRate] = useState(WATER_RATE_STANDARD);
   const [error, setError] = useState<string | null>(null);
 
   const elecCurrRef = useRef<HTMLInputElement>(null);
@@ -167,11 +185,12 @@ export function InvoiceModal({
 
   useEffect(() => {
     if (!open) return;
-    const initialDate = billingMonthToDateInput(selectedMonth);
+    const { billingDate: autoBillingDate, dueDate: autoDueDate } =
+      billingDatesForMonth(selectedMonth);
     setUnitCode("");
     setTenantName("");
-    setBillingDate(initialDate);
-    setDueDate(initialDate);
+    setBillingDate(autoBillingDate);
+    setDueDate(autoDueDate);
     setBaseRent("");
     setElecPrev("");
     setElecCurr("");
@@ -182,6 +201,8 @@ export function InvoiceModal({
     setNotes("");
     setElectricitySpecial(false);
     setElectricityRate(ELECTRICITY_SELLING_RATE);
+    setWaterSpecial(false);
+    setWaterRate(WATER_RATE_STANDARD);
     setError(null);
   }, [open, selectedMonth]);
 
@@ -189,6 +210,8 @@ export function InvoiceModal({
     if (!selectedTenant) return;
 
     setTenantName(selectedTenant.Name);
+    setElectricityRate(ELECTRICITY_SELLING_RATE);
+    setWaterRate(getWaterSellingRate(selectedTenant.Room, billingMonthForCheck));
     setBaseRent(
       selectedTenant.Rent.toLocaleString("en-PH", {
         minimumFractionDigits: 2,
@@ -218,14 +241,9 @@ export function InvoiceModal({
 
   const allowNegativeConsumption = isCorrectionMonth(billingMonthForCheck);
 
-  const activeElectricityRate = electricitySpecial
-    ? electricityRate
-    : ELECTRICITY_SELLING_RATE;
-
-  const activeWaterRate = useMemo(() => {
-    if (!selectedTenant) return 45;
-    return getWaterSellingRate(selectedTenant.Room, billingMonthForCheck);
-  }, [selectedTenant, billingMonthForCheck]);
+  const baseWaterRate = selectedTenant
+    ? getWaterSellingRate(selectedTenant.Room, billingMonthForCheck)
+    : WATER_RATE_STANDARD;
 
   const calculatedElecBill = useMemo(() => {
     const usage = calcConsumption(
@@ -233,8 +251,8 @@ export function InvoiceModal({
       readSheetNumber(elecCurr),
       allowNegativeConsumption,
     );
-    return roundCurrency(usage * activeElectricityRate);
-  }, [activeElectricityRate, elecCurr, elecPrev, allowNegativeConsumption]);
+    return roundCurrency(usage * electricityRate);
+  }, [electricityRate, elecCurr, elecPrev, allowNegativeConsumption]);
 
   const calculatedWaterBill = useMemo(() => {
     const usage = calcConsumption(
@@ -242,8 +260,8 @@ export function InvoiceModal({
       readSheetNumber(waterCurr),
       allowNegativeConsumption,
     );
-    return roundCurrency(usage * activeWaterRate);
-  }, [activeWaterRate, waterCurr, waterPrev, allowNegativeConsumption]);
+    return roundCurrency(usage * waterRate);
+  }, [waterRate, waterCurr, waterPrev, allowNegativeConsumption]);
 
   const totalDue = useMemo(
     () =>
@@ -316,10 +334,10 @@ export function InvoiceModal({
       rent: readSheetNumber(baseRent),
       ePrev: readSheetNumber(elecPrev),
       eCurr: readSheetNumber(elecCurr),
-      eRate: activeElectricityRate,
+      eRate: electricityRate,
       wPrev: readSheetNumber(waterPrev),
       wCurr: readSheetNumber(waterCurr),
-      wRate: activeWaterRate,
+      wRate: waterRate,
       adjustment: readSheetNumber(otherCharges),
     });
   };
@@ -331,7 +349,7 @@ export function InvoiceModal({
       aria-modal="true"
       aria-labelledby="invoice-modal-title"
     >
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-card">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-card">
         <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
           <h2 id="invoice-modal-title" className="text-lg font-bold text-navy">
             Tenant Invoice
@@ -417,11 +435,16 @@ export function InvoiceModal({
 
           <p className="text-sm font-bold text-navy">Charges</p>
 
-          <CurrencyInput label="Base Rent" value={baseRent} readOnly />
+          <CurrencyInput
+            label="Base Rent"
+            value={baseRent}
+            onChange={setBaseRent}
+            disabled={formLocked}
+          />
 
           <div>
             <div className="flex items-end gap-2">
-              <div className="grid flex-1 grid-cols-3 gap-2">
+              <div className="grid flex-1 grid-cols-4 gap-2">
                 <CurrencyInput
                   label="Electricity"
                   value={formatAmount(calculatedElecBill)}
@@ -449,48 +472,79 @@ export function InvoiceModal({
                     className={inputClass}
                   />
                 </div>
+                <div>
+                  <FieldLabel>Rate</FieldLabel>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={electricityRate}
+                    placeholder={String(ELECTRICITY_SELLING_RATE)}
+                    disabled={formLocked}
+                    onChange={(event) =>
+                      setElectricityRate(
+                        Number(event.target.value) || ELECTRICITY_SELLING_RATE,
+                      )
+                    }
+                    className={inputClass}
+                    aria-label="Electricity rate"
+                  />
+                </div>
               </div>
               <ToggleSwitch
                 enabled={electricitySpecial}
                 onChange={setElectricitySpecial}
               />
             </div>
-            {electricitySpecial && (
-              <input
-                type="number"
-                min={0}
-                step="any"
-                value={electricityRate}
-                onChange={(event) =>
-                  setElectricityRate(Number(event.target.value) || ELECTRICITY_SELLING_RATE)
-                }
-                className={`${inputClass} mt-2`}
-                aria-label="Electricity special rate"
-              />
-            )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <CurrencyInput
-              label="Water"
-              value={formatAmount(calculatedWaterBill)}
-              readOnly
-            />
-            <div>
-              <FieldLabel>Previous</FieldLabel>
-              <input type="text" readOnly value={waterPrev} className={readOnlyClass} />
-            </div>
-            <div>
-              <FieldLabel>Current</FieldLabel>
-              <input
-                type="number"
-                min={0}
-                step="any"
-                value={waterCurr}
-                disabled={formLocked}
-                onChange={(event) => setWaterCurr(event.target.value)}
-                className={inputClass}
-              />
+          <div>
+            <div className="flex items-end gap-2">
+              <div className="grid flex-1 grid-cols-4 gap-2">
+                <CurrencyInput
+                  label="Water"
+                  value={formatAmount(calculatedWaterBill)}
+                  readOnly
+                />
+                <div>
+                  <FieldLabel>Previous</FieldLabel>
+                  <input
+                    type="text"
+                    readOnly
+                    value={waterPrev}
+                    className={readOnlyClass}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Current</FieldLabel>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={waterCurr}
+                    disabled={formLocked}
+                    onChange={(event) => setWaterCurr(event.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Rate</FieldLabel>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={waterRate}
+                    placeholder={String(baseWaterRate)}
+                    disabled={formLocked}
+                    onChange={(event) =>
+                      setWaterRate(Number(event.target.value) || baseWaterRate)
+                    }
+                    className={inputClass}
+                    aria-label="Water rate"
+                  />
+                </div>
+              </div>
+              <ToggleSwitch enabled={waterSpecial} onChange={setWaterSpecial} />
             </div>
           </div>
 

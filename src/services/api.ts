@@ -401,10 +401,10 @@ function normalizeDashboardData(
 
   return {
     kpis: {
-      revenue: readNumber(kpis, "revenue", "totalRent"),
-      utilityCharges: readNumber(kpis, "utilityCharges", "utilityCollected"),
-      propertyExpenses: readNumber(kpis, "propertyExpenses", "totalExpenses"),
-      netIncome: readNumber(kpis, "netIncome", "netProfit"),
+      utilityCharges: readNumber(kpis, "utilityCharges", "totalBill"),
+      tenantCollections: readNumber(kpis, "tenantCollections", "paidBill"),
+      outstandingBalance: readNumber(kpis, "outstandingBalance", "balance"),
+      netIncome: readNumber(kpis, "netIncome", "profitLoss"),
     },
     revenueTrend: Array.isArray(payload.revenueTrend)
       ? (
@@ -425,19 +425,38 @@ function normalizeDashboardData(
       ? (
           payload.utilities as {
             utility?: string;
+            actualCost?: number;
+            tenantPaid?: number;
+            profitLoss?: number;
             totalBill?: number;
             allocatedAmount?: number;
-            remainingBalance?: number;
-            status?: string;
           }[]
-        ).map((row) => ({
-          utility: String(row.utility ?? ""),
-          totalBill: Number(row.totalBill ?? 0),
-          allocatedAmount: Number(row.allocatedAmount ?? 0),
-          remainingBalance: Number(row.remainingBalance ?? 0),
-          status: parseStatus(row.status),
-        }))
+        ).map((row) => {
+          const actualCost = Number(
+            row.actualCost ?? row.totalBill ?? 0,
+          );
+          const tenantPaid = Number(
+            row.tenantPaid ?? row.allocatedAmount ?? 0,
+          );
+          return {
+            utility: String(row.utility ?? ""),
+            actualCost,
+            tenantPaid,
+            profitLoss: Number(
+              row.profitLoss ?? tenantPaid - actualCost,
+            ),
+          };
+        })
       : [],
+    electricityUsage: {
+      monthly: [],
+      yearly: [],
+    },
+    waterUsage: {
+      monthly: [],
+      yearly: [],
+    },
+    recentActivity: [],
     reportSheetRows: [],
     availableMonths: Array.isArray(payload.availableMonths)
       ? (payload.availableMonths as DashboardData["availableMonths"])
@@ -455,20 +474,13 @@ function readNumber(
   return value != null ? Number(value) : 0;
 }
 
-function parseStatus(value: unknown): "Paid" | "Pending" | "Partial" {
-  const status = String(value ?? "Pending").toLowerCase();
-  if (status === "paid") return "Paid";
-  if (status === "partial") return "Partial";
-  return "Pending";
-}
-
 export function getMockDashboardData(): DashboardData {
   return {
     kpis: {
-      revenue: 75980,
-      utilityCharges: 5160,
-      propertyExpenses: 0,
-      netIncome: 59980,
+      utilityCharges: 9200,
+      tenantCollections: 9900,
+      outstandingBalance: 11000,
+      netIncome: 800,
     },
     revenueTrend: [
       { month: "Jan", revenue: 52000 },
@@ -486,17 +498,49 @@ export function getMockDashboardData(): DashboardData {
     utilities: [
       {
         utility: "Electricity",
-        totalBill: 7900,
-        allocatedAmount: 7900,
-        remainingBalance: 0,
-        status: "Paid",
+        actualCost: 7900,
+        tenantPaid: 8900,
+        profitLoss: 1000,
       },
       {
         utility: "Water",
-        totalBill: 1300,
-        allocatedAmount: 1300,
-        remainingBalance: 0,
-        status: "Pending",
+        actualCost: 1300,
+        tenantPaid: 1000,
+        profitLoss: -300,
+      },
+    ],
+    electricityUsage: {
+      monthly: [
+        { label: "Mar", value: 7200 },
+        { label: "Apr", value: 7600 },
+        { label: "May", value: 7900 },
+      ],
+      yearly: [
+        { label: "2024", value: 82000 },
+        { label: "2025", value: 91000 },
+        { label: "2026", value: 54000 },
+      ],
+    },
+    waterUsage: {
+      monthly: [
+        { label: "Mar", value: 1100 },
+        { label: "Apr", value: 1200 },
+        { label: "May", value: 1300 },
+      ],
+      yearly: [
+        { label: "2024", value: 14000 },
+        { label: "2025", value: 15200 },
+        { label: "2026", value: 8900 },
+      ],
+    },
+    recentActivity: [
+      {
+        id: "pay-1",
+        tenantName: "Joel",
+        unitCode: "APT-101",
+        amount: 5000,
+        date: "2026-07-04T00:00:00.000Z",
+        type: "payment",
       },
     ],
     reportSheetRows: [

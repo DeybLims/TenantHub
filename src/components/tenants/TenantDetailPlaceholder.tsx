@@ -8,7 +8,7 @@ export function TenantDetailPlaceholder() {
       </div>
       <h2 className="text-base font-semibold text-navy">Tenant Profile</h2>
       <p className="mt-2 max-w-[220px] text-sm text-gray-500">
-        Select a tenant from the list to view and edit their profile.
+        Select a tenant from the list to view their profile.
       </p>
     </article>
   );

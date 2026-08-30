@@ -1,12 +1,9 @@
 "use client";
 
-import { Calendar, ChevronDown } from "lucide-react";
 import {
   FloatingLabelField,
   floatingInputClass,
 } from "@/components/ui/FloatingLabelField";
-import { formatMonthLabel } from "@/lib/months";
-import type { MonthOption } from "@/types/dashboard";
 import type {
   ExpenseRecord,
   UtilityExpenseDerived,
@@ -14,11 +11,8 @@ import type {
 
 interface ExpenseFormProps {
   record: ExpenseRecord;
-  selectedMonth: string;
-  monthOptions: MonthOption[];
   derived: UtilityExpenseDerived;
   onRecordChange: (patch: Partial<ExpenseRecord>) => void;
-  onMonthChange: (month: string) => void;
   onCancel: () => void;
   onSave: () => void;
   onExportPdf: () => void;
@@ -29,7 +23,7 @@ const inputClass = `${floatingInputClass} text-navy`;
 
 function SectionTitle({ children }: { children: string }) {
   return (
-    <h3 className="text-xs font-bold uppercase tracking-wide text-gray-500">
+    <h3 className="border-b border-gray-100 pb-2 text-sm font-bold text-navy">
       {children}
     </h3>
   );
@@ -40,30 +34,26 @@ function NumberField({
   value,
   onChange,
   unit,
-  readOnly = false,
-  className = "",
 }: {
   label: string;
   value: number;
-  onChange?: (value: number) => void;
+  onChange: (value: number) => void;
   unit?: string;
-  readOnly?: boolean;
-  className?: string;
 }) {
   return (
-    <FloatingLabelField label={label} className={className}>
+    <FloatingLabelField label={label}>
       <div className="relative">
         <input
           type="number"
           min={0}
           step="any"
-          readOnly={readOnly}
           value={value || ""}
-          onChange={(event) => onChange?.(Number(event.target.value) || 0)}
-          className={`${inputClass} ${readOnly ? "cursor-default bg-gray-50" : ""} ${unit ? "pr-14" : ""}`}
+          placeholder="Enter Value"
+          onChange={(event) => onChange(Number(event.target.value) || 0)}
+          className={`${inputClass} ${unit ? "pr-14" : ""}`}
         />
         {unit && (
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-400">
             {unit}
           </span>
         )}
@@ -72,37 +62,46 @@ function NumberField({
   );
 }
 
-function RateDisplay({
+function CurrencyField({
   label,
   value,
-  unit,
-  className = "",
+  onChange,
+  readOnly = false,
+  highlight = false,
+  placeholder = "0.00",
 }: {
   label: string;
   value: number;
-  unit: string;
-  className?: string;
+  onChange?: (value: number) => void;
+  readOnly?: boolean;
+  highlight?: boolean;
+  placeholder?: string;
 }) {
   return (
-    <FloatingLabelField label={label} className={className}>
-      <input
-        type="text"
-        readOnly
-        value={value > 0 ? `${value.toFixed(2)} ${unit}` : ""}
-        placeholder="Value"
-        className={`${inputClass} cursor-default bg-gray-50`}
-      />
+    <FloatingLabelField label={label}>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+          ₱
+        </span>
+        <input
+          type="number"
+          min={0}
+          step="any"
+          readOnly={readOnly}
+          value={value || ""}
+          placeholder={placeholder}
+          onChange={(event) => onChange?.(Number(event.target.value) || 0)}
+          className={`${inputClass} pl-8 text-right ${readOnly ? "cursor-default bg-blue-50/80 font-semibold text-blue-700" : ""} ${highlight && !readOnly ? "bg-blue-50/80" : ""} ${highlight && readOnly ? "bg-blue-50/80" : ""}`}
+        />
+      </div>
     </FloatingLabelField>
   );
 }
 
 export function ExpenseForm({
   record,
-  selectedMonth,
-  monthOptions,
   derived,
   onRecordChange,
-  onMonthChange,
   onCancel,
   onSave,
   onExportPdf,
@@ -110,166 +109,111 @@ export function ExpenseForm({
 }: ExpenseFormProps) {
   return (
     <article className="rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+      <div className="border-b border-gray-100 px-6 py-4">
         <h2 className="text-base font-bold text-navy">
           Utility Expenses & Distribution
         </h2>
-        <button
-          type="button"
-          onClick={() => onRecordChange({ paidToUtility: !record.paidToUtility })}
-          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-            record.paidToUtility
-              ? "bg-emerald-100 text-emerald-700"
-              : "bg-red-100 text-red-700"
-          }`}
-        >
-          <span aria-hidden>{record.paidToUtility ? "🟢" : "🔴"}</span>
-          {record.paidToUtility ? "Paid" : "Unpaid"}
-          <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden />
-        </button>
       </div>
 
-      <div className="space-y-6 px-6 py-6">
-        <FloatingLabelField label="Date">
-          <div className="relative">
-            <select
-              value={selectedMonth}
-              onChange={(event) => onMonthChange(event.target.value)}
-              className={`${inputClass} appearance-none pr-10`}
-            >
-              {monthOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <Calendar
-              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-              aria-hidden
-            />
-          </div>
-          {selectedMonth && (
-            <p className="mt-1 text-xs text-gray-400">
-              {formatMonthLabel(selectedMonth)}
-            </p>
-          )}
-        </FloatingLabelField>
-
-        <section className="space-y-3">
-          <SectionTitle>JJC Consumption</SectionTitle>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <NumberField
-              label="Previous Reading"
-              value={record.jjcPreviousReading}
-              onChange={(value) =>
-                onRecordChange({ jjcPreviousReading: value })
-              }
-              unit="kWh"
-            />
-            <NumberField
-              label="Current Reading"
-              value={record.jjcCurrentReading}
-              onChange={(value) =>
-                onRecordChange({ jjcCurrentReading: value })
-              }
-              unit="kWh"
-            />
-            <FloatingLabelField label="Calculated Amount">
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-                  ₱
-                </span>
-                <input
-                  type="text"
-                  readOnly
-                  value={
-                    derived.jjcCalculatedAmount > 0
-                      ? derived.jjcCalculatedAmount.toLocaleString("en-PH", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })
-                      : ""
-                  }
-                  placeholder="Auto"
-                  className={`${inputClass} cursor-default bg-gray-50 pl-8`}
-                />
-              </div>
-            </FloatingLabelField>
-          </div>
-          {derived.jjcConsumption > 0 && (
-            <p className="text-xs text-gray-500">
-              Consumption:{" "}
-              <span className="font-semibold text-navy">
-                {derived.jjcConsumption.toLocaleString("en-PH")} kWh
-              </span>
-              {derived.meralcoTrueRate > 0 && (
-                <>
-                  {" "}
-                  × True Rate{" "}
-                  <span className="font-semibold text-navy">
-                    ₱{derived.meralcoTrueRate.toFixed(2)}
-                  </span>
-                </>
-              )}
-            </p>
-          )}
-        </section>
-
-        <section className="space-y-3">
-          <SectionTitle>Meralco Master Bill</SectionTitle>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <NumberField
-              label="Master Bill Amount"
-              value={record.meralcoBillAmount}
-              onChange={(value) => onRecordChange({ meralcoBillAmount: value })}
-            />
-            <NumberField
-              label="Total Consumption"
-              value={record.meralcoConsumption}
-              onChange={(value) => onRecordChange({ meralcoConsumption: value })}
-              unit="kWh"
-            />
-            <RateDisplay
-              label="True Rate"
-              value={derived.meralcoTrueRate}
-              unit="/kWh"
-            />
+      <div className="space-y-8 px-6 py-6">
+        <section className="space-y-4">
+          <SectionTitle>Electricity — Meralco</SectionTitle>
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <div className="space-y-4">
+              <NumberField
+                label="JJC Consumption"
+                value={record.jjcConsumptionKwh}
+                onChange={(value) => onRecordChange({ jjcConsumptionKwh: value })}
+                unit="kWh"
+              />
+              <NumberField
+                label="Apartment Consumption"
+                value={record.apartmentConsumptionKwh}
+                onChange={(value) =>
+                  onRecordChange({ apartmentConsumptionKwh: value })
+                }
+                unit="kWh"
+              />
+              <NumberField
+                label="Motor Power Usage"
+                value={record.motorConsumptionKwh}
+                onChange={(value) =>
+                  onRecordChange({ motorConsumptionKwh: value })
+                }
+                unit="kWh"
+              />
+            </div>
+            <div className="space-y-4">
+              <CurrencyField
+                label="Meralco Master Bill Amount"
+                value={derived.computedMeralcoMasterBill}
+                readOnly
+              />
+              <CurrencyField
+                label="Amount Paid This Month"
+                value={record.meralcoPaidThisMonth}
+                onChange={(value) =>
+                  onRecordChange({ meralcoPaidThisMonth: value })
+                }
+                highlight
+                placeholder="0.00"
+              />
+              <CurrencyField
+                label="Balance"
+                value={derived.meralcoBalance}
+                readOnly
+                highlight
+              />
+            </div>
           </div>
         </section>
 
-        <section className="space-y-3">
-          <SectionTitle>Metro Iloilo Water District (MIWD)</SectionTitle>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <NumberField
-              label="Residential Base"
-              value={record.miwdResidential}
-              onChange={(value) => onRecordChange({ miwdResidential: value })}
-            />
-            <NumberField
-              label="Commercial Base"
-              value={record.miwdCommercial}
-              onChange={(value) => onRecordChange({ miwdCommercial: value })}
-            />
+        <section className="space-y-4">
+          <SectionTitle>Water — MIWD</SectionTitle>
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <div className="space-y-4">
+              <NumberField
+                label="Residential Base"
+                value={record.miwdResidentialM3}
+                onChange={(value) => onRecordChange({ miwdResidentialM3: value })}
+                unit="m³"
+              />
+              <NumberField
+                label="Commercial Base"
+                value={record.miwdCommercialM3}
+                onChange={(value) => onRecordChange({ miwdCommercialM3: value })}
+                unit="m³"
+              />
+              <NumberField
+                label="Pumped Water Charge"
+                value={record.pumpedWaterChargeM3}
+                onChange={(value) =>
+                  onRecordChange({ pumpedWaterChargeM3: value })
+                }
+                unit="m³"
+              />
+            </div>
+            <div className="space-y-4">
+              <CurrencyField
+                label="MIWD Master Bill Amount"
+                value={derived.computedMiwdMasterBill}
+                readOnly
+              />
+              <CurrencyField
+                label="Amount Paid This Month"
+                value={record.miwdPaidThisMonth}
+                onChange={(value) => onRecordChange({ miwdPaidThisMonth: value })}
+                highlight
+                placeholder="0.00"
+              />
+              <CurrencyField
+                label="Balance"
+                value={derived.miwdBalance}
+                readOnly
+                highlight
+              />
+            </div>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <NumberField
-              label="Total Consumption"
-              value={record.miwdConsumption}
-              onChange={(value) => onRecordChange({ miwdConsumption: value })}
-              unit="m³"
-            />
-            <RateDisplay
-              label="True Rate"
-              value={derived.miwdTrueRate}
-              unit="/m³"
-            />
-          </div>
-          <NumberField
-            label="Special Water Rate"
-            value={record.miwdSpecialRate}
-            onChange={(value) => onRecordChange({ miwdSpecialRate: value })}
-            unit="/m³"
-          />
         </section>
       </div>
 

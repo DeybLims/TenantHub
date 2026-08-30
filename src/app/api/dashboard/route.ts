@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isSupabaseConfigured } from "@/lib/dataSource";
+import { fetchSupabaseBillingRows } from "@/lib/supabase/repository";
 
 const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
@@ -7,7 +9,22 @@ const GOOGLE_APPS_SCRIPT_URL =
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const action = searchParams.get("action") ?? "getBilling";
-  const month = searchParams.get("month");
+  const month = searchParams.get("month") ?? undefined;
+
+  if (action !== "getBilling") {
+    return NextResponse.json({ error: "Invalid GET action payload" }, { status: 400 });
+  }
+
+  if (isSupabaseConfigured()) {
+    try {
+      const rows = await fetchSupabaseBillingRows(month);
+      return NextResponse.json(rows);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to fetch billing from Supabase";
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+  }
 
   const url = new URL(GOOGLE_APPS_SCRIPT_URL);
   url.searchParams.set("action", action);

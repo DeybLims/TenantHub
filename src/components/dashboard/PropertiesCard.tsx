@@ -6,32 +6,41 @@ interface PropertiesCardProps {
 
 export function PropertiesCard({ properties }: PropertiesCardProps) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {properties.map((property) => {
         const percent = property.total
           ? (property.occupied / property.total) * 100
           : 0;
-        const showLabel = property.occupied > 0;
+        const percentLabel =
+          percent % 1 === 0 ? `${percent}%` : `${percent.toFixed(1)}%`;
+        const showOccupiedLabel = property.occupied > 0 && percent >= 18;
 
         return (
           <div key={property.label}>
-            <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="font-medium text-navy">{property.label}</span>
-              <span className="font-medium text-gray-500">
-                {property.occupied}/{property.total}
-              </span>
+            <div className="mb-3 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-base font-semibold text-navy">
+                  {property.label}
+                </p>
+                <p className="mt-0.5 text-sm text-gray-500">
+                  {property.occupied}/{property.total} Units Occupied
+                </p>
+              </div>
             </div>
-            <div className="relative h-9 overflow-hidden rounded-lg bg-gray-100">
+            <div className="relative h-8 overflow-hidden rounded-full bg-gray-100">
               <div
-                className="flex h-full min-w-[4.5rem] items-center rounded-lg bg-gradient-to-r from-brand-blue to-brand-blue-dark px-3 transition-all duration-300"
-                style={{ width: `${Math.max(percent, showLabel ? 28 : 0)}%` }}
+                className="relative flex h-full items-center rounded-full bg-gradient-to-r from-brand-blue to-brand-blue-dark transition-all duration-300"
+                style={{ width: `${Math.max(percent, 0)}%` }}
               >
-                {showLabel && (
-                  <span className="whitespace-nowrap text-xs font-semibold text-white">
+                {showOccupiedLabel && (
+                  <span className="pl-4 text-xs font-semibold text-white">
                     Occupied
                   </span>
                 )}
               </div>
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-navy">
+                {percentLabel}
+              </span>
             </div>
           </div>
         );

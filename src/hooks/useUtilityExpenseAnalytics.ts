@@ -12,6 +12,7 @@ import {
   computeMonthlyUtilityAnalytics,
   ELECTRICITY_SELLING_RATE,
   roundCurrency,
+  WATER_RATE_STANDARD,
   type UtilityProviderInputs,
 } from "@/lib/propertyBillingCalculations";
 import type { SheetRow } from "@/types/sheet";
@@ -22,36 +23,96 @@ function calcTrueRate(amount: number, consumption: number): number {
   return roundCurrency(amount / consumption);
 }
 
-/**
- * Derived rates from left-side inputs only.
- * - Meralco True Rate = amount / consumption
- * - JJC Consumption = current − previous
- * - JJC Calculated Amount = consumption × Meralco True Rate
- * - MIWD True Rate = (residential + commercial) / total consumption
- */
 function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
+  const meralcoTotalConsumption = roundCurrency(
+    record.jjcConsumptionKwh +
+      record.apartmentConsumptionKwh +
+      record.motorConsumptionKwh,
+  );
+
+  const meralcoBillForRate =
+    record.meralcoBillAmount > 0
+      ? record.meralcoBillAmount
+      : meralcoTotalConsumption > 0
+        ? roundCurrency(meralcoTotalConsumption * ELECTRICITY_SELLING_RATE)
+        : 0;
+
   const meralcoTrueRate = calcTrueRate(
-    record.meralcoBillAmount,
-    record.meralcoConsumption,
+    meralcoBillForRate,
+    meralcoTotalConsumption,
   );
 
-  const jjcConsumption = Math.max(
-    0,
-    roundCurrency(record.jjcCurrentReading - record.jjcPreviousReading),
-  );
-  const jjcCalculatedAmount = roundCurrency(jjcConsumption * meralcoTrueRate);
+  const motorRate =
+    record.electricityMotorRate > 0
+      ? record.electricityMotorRate
+      : meralcoTrueRate;
 
-  const miwdTrueRate = calcTrueRate(
-    record.miwdResidential + record.miwdCommercial,
-    record.miwdConsumption,
+  const jjcCalculatedAmount = roundCurrency(
+    record.jjcConsumptionKwh * meralcoTrueRate,
+  );
+  const motorCalculatedAmount = roundCurrency(
+    record.motorConsumptionKwh * motorRate,
+  );
+  const apartmentCalculatedAmount = roundCurrency(
+    record.apartmentConsumptionKwh * meralcoTrueRate,
+  );
+
+  const computedMeralcoMasterBill = roundCurrency(
+    jjcCalculatedAmount + motorCalculatedAmount + apartmentCalculatedAmount,
+  );
+
+  const miwdTotalConsumption = roundCurrency(
+    record.miwdResidentialM3 +
+      record.miwdCommercialM3 +
+      record.pumpedWaterChargeM3,
+  );
+
+  const miwdBillForRate =
+    record.miwdBillAmount > 0
+      ? record.miwdBillAmount
+      : miwdTotalConsumption > 0
+        ? roundCurrency(miwdTotalConsumption * WATER_RATE_STANDARD)
+        : 0;
+
+  const miwdTrueRate = calcTrueRate(miwdBillForRate, miwdTotalConsumption);
+
+  const waterMotorRate =
+    record.waterMotorRate > 0 ? record.waterMotorRate : miwdTrueRate;
+
+  const miwdResidentialAmount = roundCurrency(
+    record.miwdResidentialM3 * miwdTrueRate,
+  );
+  const miwdCommercialAmount = roundCurrency(
+    record.miwdCommercialM3 * miwdTrueRate,
+  );
+  const pumpedWaterAmount = roundCurrency(
+    record.pumpedWaterChargeM3 * waterMotorRate,
+  );
+
+  const computedMiwdMasterBill = roundCurrency(
+    miwdResidentialAmount + miwdCommercialAmount + pumpedWaterAmount,
   );
 
   return {
     meralcoTrueRate,
-    jjcConsumption,
+    meralcoTotalConsumption,
     jjcCalculatedAmount,
+    motorCalculatedAmount,
+    apartmentCalculatedAmount,
+    computedMeralcoMasterBill,
+    meralcoBalance: roundCurrency(
+      computedMeralcoMasterBill - record.meralcoPaidThisMonth,
+    ),
     miwdTrueRate,
+    miwdTotalConsumption,
+    miwdBalance: roundCurrency(
+      computedMiwdMasterBill - record.miwdPaidThisMonth,
+    ),
     electricitySellingRate: ELECTRICITY_SELLING_RATE,
+    miwdResidentialAmount,
+    miwdCommercialAmount,
+    pumpedWaterAmount,
+    computedMiwdMasterBill,
   };
 }
 
@@ -59,28 +120,33 @@ function expenseToProviderInputs(
   record: ExpenseRecord,
   derived: UtilityExpenseDerived,
 ): UtilityProviderInputs {
-  // Split total MIWD consumption proportionally by bill amounts for the calc engine.
-  const totalBase = record.miwdResidential + record.miwdCommercial;
+  const totalBase =
+    derived.miwdResidentialAmount + derived.miwdCommercialAmount;
   let residentialConsumption = 0;
   let commercialConsumption = 0;
-  if (record.miwdConsumption > 0 && totalBase > 0) {
+
+  if (record.miwdResidentialM3 + record.miwdCommercialM3 > 0) {
+    residentialConsumption = record.miwdResidentialM3;
+    commercialConsumption = record.miwdCommercialM3;
+  } else if (derived.miwdTotalConsumption > 0 && totalBase > 0) {
     residentialConsumption = roundCurrency(
-      (record.miwdConsumption * record.miwdResidential) / totalBase,
+      (derived.miwdTotalConsumption * derived.miwdResidentialAmount) /
+        totalBase,
     );
     commercialConsumption = roundCurrency(
-      record.miwdConsumption - residentialConsumption,
+      derived.miwdTotalConsumption - residentialConsumption,
     );
   }
 
   return {
-    meralcoBillAmount: record.meralcoBillAmount,
-    meralcoMainConsumption: record.meralcoConsumption,
-    miwdResidentialBill: record.miwdResidential,
+    meralcoBillAmount: derived.computedMeralcoMasterBill,
+    meralcoMainConsumption: derived.meralcoTotalConsumption,
+    miwdResidentialBill: derived.miwdResidentialAmount,
     miwdResidentialConsumption: residentialConsumption,
-    miwdCommercialBill: record.miwdCommercial,
+    miwdCommercialBill: derived.miwdCommercialAmount,
     miwdCommercialConsumption: commercialConsumption,
-    jjcConsumption: derived.jjcConsumption,
-    aptMotorConsumption: 0,
+    jjcConsumption: record.jjcConsumptionKwh,
+    aptMotorConsumption: record.motorConsumptionKwh,
   };
 }
 
@@ -90,49 +156,59 @@ function migrateLegacyRecord(
 ): ExpenseRecord {
   const base = defaultExpenseRecord(month);
 
-  const miwdRes =
-    Number(
-      parsed.miwdResidential ??
-        parsed.miwdResidentialAmount ??
-        parsed.miwdResidentialBase ??
-        parsed.miwdResidentialBill,
-    ) || 0;
-  const miwdCom =
-    Number(
-      parsed.miwdCommercial ??
-        parsed.miwdCommercialAmount ??
-        parsed.miwdCommercialBase ??
-        parsed.miwdCommercialBill,
-    ) || 0;
+  const jjcConsumptionKwh =
+    Number(parsed.jjcConsumptionKwh) ||
+    Math.max(
+      0,
+      Number(parsed.jjcCurrentReading ?? parsed.jjcElecCurr ?? 0) -
+        Number(parsed.jjcPreviousReading ?? parsed.jjcElecPrev ?? 0),
+    );
 
-  const resCons = Number(parsed.miwdResidentialConsumption) || 0;
-  const comCons = Number(parsed.miwdCommercialConsumption) || 0;
-  const totalCons =
-    Number(parsed.miwdConsumption ?? parsed.miwdTotalConsumption) ||
-    (resCons + comCons > 0 ? resCons + comCons : 0);
-
-  const jjcPreviousReading =
+  const miwdResidentialM3 =
     Number(
-      parsed.jjcPreviousReading ?? parsed.jjcElecPrev ?? parsed.jjcPrev,
+      parsed.miwdResidentialM3 ??
+        parsed.miwdResidentialConsumption ??
+        parsed.miwdResidential,
     ) || 0;
-  const jjcCurrentReading =
+  const miwdCommercialM3 =
     Number(
-      parsed.jjcCurrentReading ?? parsed.jjcElecCurr ?? parsed.jjcCurr,
+      parsed.miwdCommercialM3 ??
+        parsed.miwdCommercialConsumption ??
+        parsed.miwdCommercial,
     ) || 0;
+  const pumpedWaterChargeM3 =
+    Number(parsed.pumpedWaterChargeM3 ?? parsed.miwdConsumption) || 0;
 
   return {
     ...base,
-    paidToUtility: Boolean(parsed.paidToUtility),
-    jjcPreviousReading,
-    jjcCurrentReading,
+    jjcConsumptionKwh,
+    apartmentConsumptionKwh:
+      Number(parsed.apartmentConsumptionKwh ?? parsed.meralcoConsumption) || 0,
+    motorConsumptionKwh:
+      Number(parsed.motorConsumptionKwh ?? parsed.aptMotorConsumption) || 0,
+    electricityMotorRate:
+      Number(parsed.electricityMotorRate ?? parsed.motorRate) || 0,
     meralcoBillAmount:
       Number(parsed.meralcoBillAmount ?? parsed.meralcoAmount) || 0,
-    meralcoConsumption:
-      Number(parsed.meralcoConsumption ?? parsed.meralcoMainConsumption) || 0,
-    miwdResidential: miwdRes,
-    miwdCommercial: miwdCom,
-    miwdConsumption: totalCons,
-    miwdSpecialRate: Number(parsed.miwdSpecialRate ?? parsed.specialWaterRate) || 30,
+    meralcoPaidThisMonth:
+      Number(
+        parsed.meralcoPaidThisMonth ??
+          parsed.paidToUtilityAmount ??
+          parsed.clientPaidAmount,
+      ) || 0,
+    miwdResidentialM3,
+    miwdCommercialM3,
+    pumpedWaterChargeM3,
+    waterMotorRate: Number(parsed.waterMotorRate) || 0,
+    miwdBillAmount:
+      Number(
+        parsed.miwdBillAmount ??
+          (Number(parsed.miwdResidential ?? 0) +
+            Number(parsed.miwdCommercial ?? 0)),
+      ) || 0,
+    miwdPaidThisMonth: Number(parsed.miwdPaidThisMonth) || 0,
+    miwdSpecialRate:
+      Number(parsed.miwdSpecialRate ?? parsed.specialWaterRate) || 30,
   };
 }
 
@@ -152,6 +228,17 @@ function loadExpenseRecord(month: string): ExpenseRecord {
 function saveExpenseRecord(month: string, record: ExpenseRecord): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(expenseRecordStorageKey(month), JSON.stringify(record));
+}
+
+function allocatedUtilityPaid(row: SheetRow, bill: number): number {
+  const due = Number(row.TotalDue ?? row.Total ?? 0);
+  const paid = Number(row.Paid ?? 0);
+  if (due <= 0 || bill <= 0) return 0;
+  if (row.Status === "Paid") return bill;
+  if (row.Status === "Partial") {
+    return Math.min(bill, (paid / due) * bill);
+  }
+  return 0;
 }
 
 interface UseUtilityExpenseAnalyticsOptions {
@@ -175,12 +262,26 @@ export function useUtilityExpenseAnalytics({
   useEffect(() => {
     if (!selectedMonth) return;
     const loaded = loadExpenseRecord(selectedMonth);
-    setRecord(loaded);
-    setSavedSnapshot(loaded);
+    const loadedDerived = deriveRates(loaded);
+    const normalized = {
+      ...loaded,
+      meralcoBillAmount: loadedDerived.computedMeralcoMasterBill,
+      miwdBillAmount: loadedDerived.computedMiwdMasterBill,
+    };
+    setRecord(normalized);
+    setSavedSnapshot(normalized);
   }, [selectedMonth]);
 
   const updateRecord = useCallback((patch: Partial<ExpenseRecord>) => {
-    setRecord((current) => ({ ...current, ...patch }));
+    setRecord((current) => {
+      const next = { ...current, ...patch };
+      const nextDerived = deriveRates(next);
+      return {
+        ...next,
+        meralcoBillAmount: nextDerived.computedMeralcoMasterBill,
+        miwdBillAmount: nextDerived.computedMiwdMasterBill,
+      };
+    });
   }, []);
 
   const derived = useMemo(() => deriveRates(record), [record]);
@@ -201,41 +302,60 @@ export function useUtilityExpenseAnalytics({
     const tenantKwh = sheetAnalytics.sumElecConsumption;
     const tenantM3 = sheetAnalytics.sumWaterConsumption;
 
-    // Electricity: billed = kWh × selling rate; cost = kWh × true rate
-    const tenantTotalBilled = roundCurrency(
-      tenantKwh * derived.electricitySellingRate,
+    const paidTenantBilled = roundCurrency(
+      sheetAnalytics.rooms.reduce(
+        (sum, room) =>
+          sum +
+          allocatedUtilityPaid(
+            {
+              TotalDue: room.grandTotal,
+              Paid: room.amountPaid,
+              Status:
+                room.amountPaid >= room.grandTotal && room.grandTotal > 0
+                  ? "Paid"
+                  : room.amountPaid > 0
+                    ? "Partial"
+                    : "Unpaid",
+            } as SheetRow,
+            room.elecBill + room.waterBill,
+          ),
+        0,
+      ),
     );
+
     const tenantElectricityTrueCost = roundCurrency(
       tenantKwh * derived.meralcoTrueRate,
     );
     const netElectricityProfit = roundCurrency(
-      tenantTotalBilled - tenantElectricityTrueCost,
+      paidTenantBilled - tenantElectricityTrueCost,
     );
 
-    // Water: revenue = m³ × special rate; cost = m³ × MIWD true rate
-    // (APT Motor overhead omitted — no input in locked UI layout)
     const tenantWaterRevenue = roundCurrency(
       tenantM3 * record.miwdSpecialRate,
     );
     const trueTenantWaterCost = roundCurrency(
       tenantM3 * derived.miwdTrueRate,
     );
+    const waterMotorCost = roundCurrency(
+      record.motorConsumptionKwh > 0
+        ? record.motorConsumptionKwh * (record.waterMotorRate || derived.miwdTrueRate)
+        : derived.pumpedWaterAmount,
+    );
     const netWaterProfit = roundCurrency(
-      tenantWaterRevenue - trueTenantWaterCost,
+      tenantWaterRevenue - trueTenantWaterCost - waterMotorCost,
     );
 
     return {
       derived,
       tenantTotalConsumptionKwh: tenantKwh,
       tenantTotalWaterM3: tenantM3,
-      tenantTotalBilled,
+      paidTenantBilled,
       tenantElectricityTrueCost,
       netElectricityProfit,
       tenantWaterRevenue,
       trueTenantWaterCost,
       netWaterProfit,
-      miwdResidentialAmount: record.miwdResidential,
-      miwdCommercialAmount: record.miwdCommercial,
+      waterMotorCost,
       warnings: sheetAnalytics.warnings.map((warning) => ({
         room: warning.room,
         utility: warning.utility,

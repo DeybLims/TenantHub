@@ -1,6 +1,6 @@
 # TenantHub — Rental Dashboard
 
-Next.js rental management dashboard backed by a Google Sheet JSON API.
+Next.js rental management dashboard backed by **Supabase** or Google Sheets.
 
 ## Stack
 
@@ -10,16 +10,27 @@ Next.js rental management dashboard backed by a Google Sheet JSON API.
 - TanStack React Query
 - react-chartjs-2 + Chart.js
 - Lucide React
-
+                                        
 ## Getting started
 
 ```bash
 npm install
 cp .env.example .env.local
+# Add Supabase keys (recommended) — see Data source below
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+## Data source: Supabase (recommended)
+
+When `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set in `.env.local`, API routes use **Supabase** instead of Google Sheets.
+
+1. Run `scripts/supabase/schema.sql` in the Supabase SQL Editor.
+2. Supabase → **Project Settings → API** → copy Project URL and `service_role` key into `.env.local`.
+3. Restart `npm run dev`.
+
+Never expose `SUPABASE_SERVICE_ROLE_KEY` in the browser — it is server-only.
 
 ## Deploy on Vercel
 
@@ -30,12 +41,15 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Name | Value |
 |------|--------|
-| `NEXT_PUBLIC_SHEETS_API_URL` | Your Google Apps Script Web App URL |
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (server only) |
 | `NEXT_PUBLIC_USE_MOCK_DATA` | `false` |
 
-5. Deploy. The `/api/dashboard` route proxies your Sheet API server-side (no CORS issues).
+Or, for Google Sheets only: `NEXT_PUBLIC_SHEETS_API_URL` instead of Supabase vars.
 
-## Google Sheets API
+5. Deploy. API routes run server-side (no CORS issues).
+
+## Google Sheets API (legacy)
 
 1. Create a Google Apps Script bound to your sheet.
 2. Deploy as **Web app** — Execute as *Me*, access *Anyone*.
@@ -59,6 +73,7 @@ Your API currently returns only active rooms (`1, 3, 4, 6, 7`), so counts may lo
 
 ## Project structure
 
-- `src/services/api.ts` — fetch + normalize Sheet JSON
+- `src/lib/supabase/` — Supabase client, mappers, repository
+- `src/services/api.ts` — client fetch layer
 - `src/components/dashboard/Dashboard.tsx` — main dashboard UI
 - `src/types/dashboard.ts` — TypeScript types

@@ -1,7 +1,9 @@
 import type {
   DashboardData,
   PropertyOccupancy,
+  RecentActivityItem,
   UtilityRow,
+  UtilityUsageSeries,
 } from "@/types/dashboard";
 import type { SheetRow } from "@/types/sheet";
 import {
@@ -60,14 +62,101 @@ function findMeterRow(rows: SheetRow[]): SheetRow | undefined {
   return rows.find((r) => String(r.Room).includes("T") && !isIsoMonth(r.Month));
 }
 
-function utilityStatus(
-  totalBill: number,
-  allocated: number,
-): UtilityRow["status"] {
-  if (totalBill <= 0) return "Pending";
-  if (allocated >= totalBill) return "Paid";
-  if (allocated > 0) return "Partial";
-  return "Pending";
+function buildUtilityRow(
+  utility: string,
+  actualCost: number,
+  tenantPaid: number,
+): UtilityRow {
+  return {
+    utility,
+    actualCost,
+    tenantPaid,
+    profitLoss: roundCurrency(tenantPaid - actualCost),
+  };
+}
+
+function roundCurrency(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function buildUsageSeries(
+  rows: SheetRow[],
+  utility: "electricity" | "water",
+): UtilityUsageSeries {
+  const tenantMonthRows = rows.filter((row) => isTenantRoom(row.Room));
+  const monthMap = new Map<string, number>();
+
+  for (const row of tenantMonthRows) {
+    const monthKey = String(row.Month);
+    const value =
+      utility === "electricity"
+        ? toNumber(row.ElecBill)
+        : toNumber(row.WaterBill);
+    monthMap.set(monthKey, (monthMap.get(monthKey) ?? 0) + value);
+  }
+
+  const sortedMonths = sortMonths([...monthMap.keys()]);
+  const monthly = sortedMonths.slice(-6).map((monthKey) => ({
+    label: monthChartLabel(monthKey),
+    value: monthMap.get(monthKey) ?? 0,
+  }));
+
+  const yearMap = new Map<number, number>();
+  for (const [monthKey, value] of monthMap.entries()) {
+    const year = new Date(monthKey).getFullYear();
+    if (!Number.isNaN(year)) {
+      yearMap.set(year, (yearMap.get(year) ?? 0) + value);
+    }
+  }
+
+  const yearly = [...yearMap.entries()]
+    .sort(([a], [b]) => a - b)
+    .slice(-4)
+    .map(([year, value]) => ({
+      label: String(year),
+      value,
+    }));
+
+  return { monthly, yearly };
+}
+
+function buildRecentActivity(rows: SheetRow[]): RecentActivityItem[] {
+  const tenantRowsList = tenantRows(rows);
+  const items: RecentActivityItem[] = [];
+
+  for (const row of tenantRowsList) {
+    const paid = rowPaid(row);
+    const due = rowTotalDue(row);
+    const room = Number(row.Room);
+    const unitCode = room <= 6 ? `APT-${100 + room}` : `COM-${200 + room - 6}`;
+    const tenantName = `Room ${room}`;
+
+    if (paid > 0 && row.DatePaid) {
+      items.push({
+        id: `pay-${room}-${row.Month}`,
+        tenantName: String((row as SheetRow & { TenantName?: string }).TenantName ?? tenantName),
+        unitCode,
+        amount: paid,
+        date: String(row.DatePaid),
+        type: "payment",
+      });
+    } else if (due > 0) {
+      items.push({
+        id: `bill-${room}-${row.Month}`,
+        tenantName: String((row as SheetRow & { TenantName?: string }).TenantName ?? tenantName),
+        unitCode,
+        amount: due,
+        date: String(row.Month),
+        type: "bill",
+      });
+    }
+  }
+
+  return items
+    .sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    )
+    .slice(0, 8);
 }
 
 /** Apartment units 1–6; commercial units 7–8 (adjust if your sheet differs). */
@@ -119,60 +208,50 @@ function buildTenantMonthDashboard(rows: SheetRow[]): Omit<
   "revenueTrend" | "reportSheetRows" | "availableMonths" | "activeMonth"
 > {
   const tenants = tenantRows(rows);
-  const revenue = tenants.reduce((sum, r) => sum + rowTotalDue(r), 0);
-  const utilityCharges = tenants.reduce(
-    (sum, r) => sum + toNumber(r.ElecBill) + toNumber(r.WaterBill),
-    0,
-  );
-  const propertyExpenses = tenants.reduce(
-    (sum, r) => sum + Math.abs(toNumber(r.Adjustment)),
-    0,
-  );
-  const totalPaid = tenants.reduce((sum, r) => sum + rowPaid(r), 0);
-  const netIncome = totalPaid - propertyExpenses;
+  const paidBill = tenants.reduce((sum, r) => sum + rowPaid(r), 0);
 
-  const collected = totalPaid;
+  const collected = paidBill;
   const outstanding = tenants.reduce(
     (sum, r) => sum + Math.max(0, rowTotalDue(r) - rowPaid(r)),
     0,
   );
 
-  const electricityTotal = tenants.reduce(
+  const electricityActual = tenants.reduce(
     (sum, r) => sum + toNumber(r.ElecBill),
     0,
   );
-  const electricityAllocated = tenants.reduce(
+  const electricityTenantPaid = tenants.reduce(
     (sum, r) => sum + allocatedUtility(r, toNumber(r.ElecBill)),
     0,
   );
-  const waterTotal = tenants.reduce((sum, r) => sum + toNumber(r.WaterBill), 0);
-  const waterAllocated = tenants.reduce(
+  const waterActual = tenants.reduce((sum, r) => sum + toNumber(r.WaterBill), 0);
+  const waterTenantPaid = tenants.reduce(
     (sum, r) => sum + allocatedUtility(r, toNumber(r.WaterBill)),
     0,
   );
 
   const utilities: UtilityRow[] = [
-    {
-      utility: "Electricity",
-      totalBill: electricityTotal,
-      allocatedAmount: electricityAllocated,
-      remainingBalance: Math.max(0, electricityTotal - electricityAllocated),
-      status: utilityStatus(electricityTotal, electricityAllocated),
-    },
-    {
-      utility: "Water",
-      totalBill: waterTotal,
-      allocatedAmount: waterAllocated,
-      remainingBalance: Math.max(0, waterTotal - waterAllocated),
-      status: utilityStatus(waterTotal, waterAllocated),
-    },
+    buildUtilityRow("Electricity", electricityActual, electricityTenantPaid),
+    buildUtilityRow("Water", waterActual, waterTenantPaid),
   ];
 
+  const utilityCharges = utilities.reduce((sum, row) => sum + row.actualCost, 0);
+  const tenantCollections = utilities.reduce((sum, row) => sum + row.tenantPaid, 0);
+  const netIncome = utilities.reduce((sum, row) => sum + row.profitLoss, 0);
+
   return {
-    kpis: { revenue, utilityCharges, propertyExpenses, netIncome },
+    kpis: {
+      utilityCharges,
+      tenantCollections,
+      outstandingBalance: outstanding,
+      netIncome,
+    },
     paymentStatus: { collected, outstanding },
     properties: buildProperties(tenants),
     utilities,
+    electricityUsage: buildUsageSeries(rows, "electricity"),
+    waterUsage: buildUsageSeries(rows, "water"),
+    recentActivity: buildRecentActivity(rows),
   };
 }
 
@@ -183,55 +262,47 @@ function buildLegacyMonthDashboard(rows: SheetRow[]): Omit<
   const tenants = tenantRows(rows);
   const aptTenants = findRow(rows, "APT TENANTS");
   const netRow = findRow(rows, "NET");
-  const motorBilling = findRow(rows, "Apt motor billing");
-  const jjcBilling = findRow(rows, "jjc billing");
   const meterRow = findMeterRow(rows);
   const motorConsumption = findRow(rows, "APT MOTOR CONSUMPTION");
 
-  const revenue = tenants.reduce((sum, r) => sum + rowTotalDue(r), 0);
-  const utilityCharges =
-    toNumber(aptTenants?.ElecBill) + toNumber(aptTenants?.WaterPrev);
-  const propertyExpenses =
-    toNumber(motorBilling?.Rent) + toNumber(jjcBilling?.Rent);
-  const netFromSheet = toNumber(netRow?.ElecBill);
-  const netIncome =
-    netFromSheet !== 0 ? netFromSheet : revenue + utilityCharges - propertyExpenses;
+  const totalBill = tenants.reduce((sum, r) => sum + rowTotalDue(r), 0);
+  const paidBill = tenants.reduce((sum, r) => sum + rowPaid(r), 0);
 
-  const collected = tenants
-    .filter((r) => r.Status === "Paid")
-    .reduce((sum, r) => sum + rowTotalDue(r), 0);
+  const collected = paidBill;
+  const outstanding = tenants.reduce(
+    (sum, r) => sum + Math.max(0, rowTotalDue(r) - rowPaid(r)),
+    0,
+  );
 
-  const outstanding = tenants
-    .filter((r) => r.Status === "Unpaid" || r.Status === "Partial")
-    .reduce((sum, r) => sum + rowTotalDue(r), 0);
-
-  const electricityTotal = toNumber(meterRow?.ElecBill);
-  const electricityAllocated = toNumber(aptTenants?.ElecBill);
-  const waterTotal = Math.abs(toNumber(motorConsumption?.WaterPrev));
-  const waterAllocated = toNumber(aptTenants?.WaterPrev);
+  const electricityActual = toNumber(meterRow?.ElecBill);
+  const electricityTenantPaid = toNumber(aptTenants?.ElecBill);
+  const waterActual = Math.abs(toNumber(motorConsumption?.WaterPrev));
+  const waterTenantPaid = toNumber(aptTenants?.WaterPrev);
 
   const utilities: UtilityRow[] = [
-    {
-      utility: "Electricity",
-      totalBill: electricityTotal,
-      allocatedAmount: electricityAllocated,
-      remainingBalance: Math.max(0, electricityTotal - electricityAllocated),
-      status: utilityStatus(electricityTotal, electricityAllocated),
-    },
-    {
-      utility: "Water",
-      totalBill: waterTotal,
-      allocatedAmount: waterAllocated,
-      remainingBalance: Math.max(0, waterTotal - waterAllocated),
-      status: utilityStatus(waterTotal, waterAllocated),
-    },
+    buildUtilityRow("Electricity", electricityActual, electricityTenantPaid),
+    buildUtilityRow("Water", waterActual, waterTenantPaid),
   ];
 
+  const utilityCharges = utilities.reduce((sum, row) => sum + row.actualCost, 0);
+  const tenantCollections = utilities.reduce((sum, row) => sum + row.tenantPaid, 0);
+  const netIncome =
+    toNumber(netRow?.ElecBill) ||
+    utilities.reduce((sum, row) => sum + row.profitLoss, 0);
+
   return {
-    kpis: { revenue, utilityCharges, propertyExpenses, netIncome },
+    kpis: {
+      utilityCharges,
+      tenantCollections,
+      outstandingBalance: outstanding,
+      netIncome,
+    },
     paymentStatus: { collected, outstanding },
     properties: buildProperties(tenants),
     utilities,
+    electricityUsage: buildUsageSeries(rows, "electricity"),
+    waterUsage: buildUsageSeries(rows, "water"),
+    recentActivity: buildRecentActivity(rows),
   };
 }
 

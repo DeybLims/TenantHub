@@ -7,10 +7,10 @@ export function DashboardSkeleton() {
         ))}
       </div>
       <div className="dashboard-area-charts grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="h-64 rounded-xl bg-white shadow-card" />
-        <div className="h-64 rounded-xl bg-white shadow-card" />
+        <div className="h-72 rounded-xl bg-white shadow-card" />
+        <div className="h-72 rounded-xl bg-white shadow-card" />
       </div>
-      <div className="dashboard-area-table h-64 rounded-xl bg-white shadow-card" />
+      <div className="dashboard-area-properties h-48 rounded-xl bg-white shadow-card" />
     </div>
   );
 }

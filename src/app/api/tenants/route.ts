@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isSupabaseConfigured } from "@/lib/dataSource";
 import { normalizeTenants } from "@/lib/normalizeTenants";
 import { fetchFromSheets } from "@/lib/sheetsClient";
+import {
+  fetchSupabaseTenants,
+  saveSupabaseTenant,
+} from "@/lib/supabase/repository";
 
 const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
@@ -34,6 +39,11 @@ function parseSheetsResponse(raw: string): {
 
 export async function GET() {
   try {
+    if (isSupabaseConfigured()) {
+      const tenants = await fetchSupabaseTenants();
+      return NextResponse.json(tenants);
+    }
+
     const data = await fetchFromSheets("getTenants");
     const tenants = normalizeTenants(data);
     return NextResponse.json(tenants);
@@ -46,7 +56,33 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body: unknown = await request.json();
+    const body = (await request.json()) as {
+      action?: string;
+      data?: Record<string, unknown>;
+    };
+
+    if (isSupabaseConfigured()) {
+      if (body.action === "saveTenant" && body.data) {
+        const result = await saveSupabaseTenant(body.data);
+        const status = result.success ? 200 : 400;
+        return NextResponse.json(result, { status });
+      }
+
+      if (body.action === "deleteTenant" && body.data) {
+        const result = await saveSupabaseTenant({
+          ...body.data,
+          name: "",
+          status: "Vacant",
+        });
+        const status = result.success ? 200 : 400;
+        return NextResponse.json(result, { status });
+      }
+
+      return NextResponse.json(
+        { success: false, message: "Invalid payload execution action" },
+        { status: 400 },
+      );
+    }
 
     const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
       method: "POST",
@@ -75,7 +111,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(parsed.data);
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to reach Sheets API";
+      error instanceof Error ? error.message : "Failed to save tenant";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }

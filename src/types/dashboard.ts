@@ -1,7 +1,7 @@
 export interface DashboardKpis {
-  revenue: number;
   utilityCharges: number;
-  propertyExpenses: number;
+  tenantCollections: number;
+  outstandingBalance: number;
   netIncome: number;
 }
 
@@ -23,10 +23,28 @@ export interface PropertyOccupancy {
 
 export interface UtilityRow {
   utility: string;
-  totalBill: number;
-  allocatedAmount: number;
-  remainingBalance: number;
-  status: "Paid" | "Pending" | "Partial";
+  actualCost: number;
+  tenantPaid: number;
+  profitLoss: number;
+}
+
+export interface UtilityUsagePoint {
+  label: string;
+  value: number;
+}
+
+export interface UtilityUsageSeries {
+  monthly: UtilityUsagePoint[];
+  yearly: UtilityUsagePoint[];
+}
+
+export interface RecentActivityItem {
+  id: string;
+  tenantName: string;
+  unitCode: string;
+  amount: number;
+  date: string;
+  type: "payment" | "bill";
 }
 
 export interface MonthOption {
@@ -42,6 +60,9 @@ export interface DashboardData {
   paymentStatus: PaymentStatus;
   properties: PropertyOccupancy[];
   utilities: UtilityRow[];
+  electricityUsage: UtilityUsageSeries;
+  waterUsage: UtilityUsageSeries;
+  recentActivity: RecentActivityItem[];
   /** Tenant rows for the selected month — used for CSV export. */
   reportSheetRows: SheetRow[];
   availableMonths: MonthOption[];

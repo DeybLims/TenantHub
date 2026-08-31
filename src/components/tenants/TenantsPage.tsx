@@ -20,7 +20,7 @@ import { mapTenantViewModel } from "@/lib/mapTenantViewModel";
 import { printTenantReport } from "@/lib/printTenantReport";
 import { buildTenantBillingSummary } from "@/lib/tenantBillingSummary";
 import { isVacantTenant } from "@/lib/tenantRooms";
-import { getVacantTenantSlots, hasVacantRoom } from "@/lib/tenantRooms";
+import { getVacantTenantSlots } from "@/lib/tenantRooms";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import {
   deleteTenant,
@@ -64,8 +64,6 @@ export function TenantsPage() {
     () => (tenants ? getVacantTenantSlots(tenants) : []),
     [tenants],
   );
-
-  const canAddTenant = tenants ? hasVacantRoom(tenants) : false;
 
   useEffect(() => {
     if (!billingRows?.length || selectedMonth) return;
@@ -190,12 +188,7 @@ export function TenantsPage() {
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}
-            disabled={!canAddTenant || isLoading}
-            title={
-              canAddTenant
-                ? undefined
-                : "All 8 units are occupied. Remove a tenant first."
-            }
+            disabled={isLoading}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-4 w-4" aria-hidden />

@@ -118,8 +118,8 @@ export function BillingPage() {
   );
 
   const dashboardSummary = useMemo(
-    () => computeBillingDashboardSummary(billsInRange),
-    [billsInRange],
+    () => computeBillingDashboardSummary(filteredRows),
+    [filteredRows],
   );
 
   const tenantBills = useMemo(() => {

@@ -165,6 +165,50 @@ export function TenantDetails({
     [billing, selectedMonth],
   );
 
+  const savedForm = useMemo(
+    () => ({
+      name: tenant.Name,
+      contactNumber: tenant.ContactNumber,
+      email: tenant.EmailAddress,
+      emergencyContact: tenant.EmergencyContact,
+      emergencyNumber: tenant.EmergencyNumber,
+      leaseStart: toDateInputValue(tenant.LeaseStart || tenant.MoveIn),
+      moveInDate: toDateInputValue(tenant.MoveIn),
+      baseRent: formatCurrencyField(tenant.Rent),
+      deposit: formatCurrencyField(tenant.Deposit),
+      notes: tenant.Notes,
+    }),
+    [tenant],
+  );
+
+  const isDirty = useMemo(() => {
+    const current = {
+      name,
+      contactNumber,
+      email,
+      emergencyContact,
+      emergencyNumber,
+      leaseStart,
+      moveInDate,
+      baseRent,
+      deposit,
+      notes,
+    };
+    return JSON.stringify(current) !== JSON.stringify(savedForm);
+  }, [
+    name,
+    contactNumber,
+    email,
+    emergencyContact,
+    emergencyNumber,
+    leaseStart,
+    moveInDate,
+    baseRent,
+    deposit,
+    notes,
+    savedForm,
+  ]);
+
   const resetForm = () => {
     setName(tenant.Name);
     setContactNumber(tenant.ContactNumber);
@@ -242,15 +286,17 @@ export function TenantDetails({
                 type="text"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
+                autoComplete="name"
                 className={fieldClass}
               />
             </IconField>
             <IconField icon={Phone} label="Contact Number">
               <input
-                type="text"
+                type="tel"
                 value={contactNumber}
                 onChange={(event) => setContactNumber(event.target.value)}
                 placeholder="09 12 345 6789"
+                autoComplete="tel"
                 className={fieldClass}
               />
             </IconField>
@@ -260,6 +306,7 @@ export function TenantDetails({
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="name@email.com"
+                autoComplete="email"
                 className={fieldClass}
               />
             </IconField>
@@ -268,15 +315,17 @@ export function TenantDetails({
                 type="text"
                 value={emergencyContact}
                 onChange={(event) => setEmergencyContact(event.target.value)}
+                autoComplete="off"
                 className={fieldClass}
               />
             </IconField>
             <IconField icon={Phone} label="Emergency Number">
               <input
-                type="text"
+                type="tel"
                 value={emergencyNumber}
                 onChange={(event) => setEmergencyNumber(event.target.value)}
                 placeholder="09 12 345 6789"
+                autoComplete="off"
                 className={fieldClass}
               />
             </IconField>
@@ -425,14 +474,16 @@ export function TenantDetails({
 
       <div className="flex flex-col gap-3 border-t border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-4">
-          <button
-            type="button"
-            onClick={handleCancel}
-            disabled={isSaving || isDeleting}
-            className="text-sm font-semibold text-blue-500 hover:text-blue-600 disabled:opacity-60"
-          >
-            Cancel
-          </button>
+          {isDirty && (
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={isSaving || isDeleting}
+              className="text-sm font-semibold text-blue-500 hover:text-blue-600 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          )}
           <button
             type="button"
             onClick={handleDelete}

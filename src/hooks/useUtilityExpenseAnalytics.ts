@@ -30,35 +30,29 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
       record.motorConsumptionKwh,
   );
 
-  const meralcoBillForRate =
-    record.meralcoBillAmount > 0
-      ? record.meralcoBillAmount
-      : meralcoTotalConsumption > 0
-        ? roundCurrency(meralcoTotalConsumption * ELECTRICITY_SELLING_RATE)
-        : 0;
-
-  const meralcoTrueRate = calcTrueRate(
-    meralcoBillForRate,
-    meralcoTotalConsumption,
-  );
-
-  const motorRate =
+  const baseElecRate = ELECTRICITY_SELLING_RATE;
+  const motorElecRate =
     record.electricityMotorRate > 0
       ? record.electricityMotorRate
-      : meralcoTrueRate;
+      : baseElecRate;
 
   const jjcCalculatedAmount = roundCurrency(
-    record.jjcConsumptionKwh * meralcoTrueRate,
-  );
-  const motorCalculatedAmount = roundCurrency(
-    record.motorConsumptionKwh * motorRate,
+    record.jjcConsumptionKwh * baseElecRate,
   );
   const apartmentCalculatedAmount = roundCurrency(
-    record.apartmentConsumptionKwh * meralcoTrueRate,
+    record.apartmentConsumptionKwh * baseElecRate,
+  );
+  const motorCalculatedAmount = roundCurrency(
+    record.motorConsumptionKwh * motorElecRate,
   );
 
   const computedMeralcoMasterBill = roundCurrency(
     jjcCalculatedAmount + motorCalculatedAmount + apartmentCalculatedAmount,
+  );
+
+  const meralcoTrueRate = calcTrueRate(
+    computedMeralcoMasterBill,
+    meralcoTotalConsumption,
   );
 
   const miwdTotalConsumption = roundCurrency(
@@ -67,23 +61,15 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
       record.pumpedWaterChargeM3,
   );
 
-  const miwdBillForRate =
-    record.miwdBillAmount > 0
-      ? record.miwdBillAmount
-      : miwdTotalConsumption > 0
-        ? roundCurrency(miwdTotalConsumption * WATER_RATE_STANDARD)
-        : 0;
-
-  const miwdTrueRate = calcTrueRate(miwdBillForRate, miwdTotalConsumption);
-
+  const baseWaterRate = WATER_RATE_STANDARD;
   const waterMotorRate =
-    record.waterMotorRate > 0 ? record.waterMotorRate : miwdTrueRate;
+    record.waterMotorRate > 0 ? record.waterMotorRate : baseWaterRate;
 
   const miwdResidentialAmount = roundCurrency(
-    record.miwdResidentialM3 * miwdTrueRate,
+    record.miwdResidentialM3 * baseWaterRate,
   );
   const miwdCommercialAmount = roundCurrency(
-    record.miwdCommercialM3 * miwdTrueRate,
+    record.miwdCommercialM3 * baseWaterRate,
   );
   const pumpedWaterAmount = roundCurrency(
     record.pumpedWaterChargeM3 * waterMotorRate,
@@ -91,6 +77,11 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
 
   const computedMiwdMasterBill = roundCurrency(
     miwdResidentialAmount + miwdCommercialAmount + pumpedWaterAmount,
+  );
+
+  const miwdTrueRate = calcTrueRate(
+    computedMiwdMasterBill,
+    miwdTotalConsumption,
   );
 
   return {
@@ -262,26 +253,12 @@ export function useUtilityExpenseAnalytics({
   useEffect(() => {
     if (!selectedMonth) return;
     const loaded = loadExpenseRecord(selectedMonth);
-    const loadedDerived = deriveRates(loaded);
-    const normalized = {
-      ...loaded,
-      meralcoBillAmount: loadedDerived.computedMeralcoMasterBill,
-      miwdBillAmount: loadedDerived.computedMiwdMasterBill,
-    };
-    setRecord(normalized);
-    setSavedSnapshot(normalized);
+    setRecord(loaded);
+    setSavedSnapshot(loaded);
   }, [selectedMonth]);
 
   const updateRecord = useCallback((patch: Partial<ExpenseRecord>) => {
-    setRecord((current) => {
-      const next = { ...current, ...patch };
-      const nextDerived = deriveRates(next);
-      return {
-        ...next,
-        meralcoBillAmount: nextDerived.computedMeralcoMasterBill,
-        miwdBillAmount: nextDerived.computedMiwdMasterBill,
-      };
-    });
+    setRecord((current) => ({ ...current, ...patch }));
   }, []);
 
   const derived = useMemo(() => deriveRates(record), [record]);
@@ -366,8 +343,15 @@ export function useUtilityExpenseAnalytics({
 
   const save = useCallback(() => {
     if (!selectedMonth) return;
-    const toSave = { ...record, billingMonth: selectedMonth };
+    const snapshot = deriveRates(record);
+    const toSave = {
+      ...record,
+      billingMonth: selectedMonth,
+      meralcoBillAmount: snapshot.computedMeralcoMasterBill,
+      miwdBillAmount: snapshot.computedMiwdMasterBill,
+    };
     saveExpenseRecord(selectedMonth, toSave);
+    setRecord(toSave);
     setSavedSnapshot(toSave);
   }, [record, selectedMonth]);
 

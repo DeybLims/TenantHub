@@ -147,7 +147,11 @@ export function AddTenantModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 px-6 py-6">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 px-6 py-6"
+          autoComplete="off"
+        >
           {!hasVacancy ? (
             <div
               className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
@@ -195,13 +199,14 @@ export function AddTenantModal({
                 placeholder="Joel"
                 disabled={!hasVacancy}
                 className={inputClass}
+                autoComplete="name"
                 autoFocus
               />
             </div>
             <div>
               <FieldLabel>Contact Number</FieldLabel>
               <input
-                type="text"
+                type="tel"
                 value={form.contactNumber}
                 onChange={(event) =>
                   updateField("contactNumber", event.target.value)
@@ -209,6 +214,7 @@ export function AddTenantModal({
                 placeholder="09 12 345 6789"
                 disabled={!hasVacancy}
                 className={inputClass}
+                autoComplete="tel"
               />
             </div>
             <div>
@@ -220,6 +226,7 @@ export function AddTenantModal({
                 placeholder="joel@gmail.com"
                 disabled={!hasVacancy}
                 className={inputClass}
+                autoComplete="email"
               />
             </div>
             <div>

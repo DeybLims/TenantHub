@@ -118,7 +118,7 @@ export function ExpenseForm({
       <div className="space-y-8 px-6 py-6">
         <section className="space-y-4">
           <SectionTitle>Electricity — Meralco</SectionTitle>
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:gap-8">
             <div className="space-y-4">
               <NumberField
                 label="JJC Consumption"
@@ -143,7 +143,7 @@ export function ExpenseForm({
                 unit="kWh"
               />
             </div>
-            <div className="space-y-4">
+            <div className="space-y-4 border-t border-gray-200 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
               <CurrencyField
                 label="Meralco Master Bill Amount"
                 value={derived.computedMeralcoMasterBill}
@@ -170,7 +170,7 @@ export function ExpenseForm({
 
         <section className="space-y-4">
           <SectionTitle>Water — MIWD</SectionTitle>
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:gap-8">
             <div className="space-y-4">
               <NumberField
                 label="Residential Base"
@@ -193,7 +193,7 @@ export function ExpenseForm({
                 unit="m³"
               />
             </div>
-            <div className="space-y-4">
+            <div className="space-y-4 border-t border-gray-200 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
               <CurrencyField
                 label="MIWD Master Bill Amount"
                 value={derived.computedMiwdMasterBill}

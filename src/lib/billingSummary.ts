@@ -24,6 +24,7 @@ function isOverdue(row: BillingTableRow): boolean {
   return status === "Unpaid" || status === "Partial";
 }
 
+/** Expects one row per tenant (use aggregateBillingRowsByTenant first). */
 export function computeBillingDashboardSummary(
   rows: BillingTableRow[],
 ): BillingDashboardSummary {

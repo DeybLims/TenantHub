@@ -117,6 +117,10 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
             value={formatExpenseAmount(derived.jjcCalculatedAmount)}
           />
           <AnalyticsRow
+            label="Apartment Consumption"
+            value={formatExpenseAmount(derived.apartmentCalculatedAmount)}
+          />
+          <AnalyticsRow
             label="Motor Power Usage"
             value={formatExpenseAmount(derived.motorCalculatedAmount)}
           />

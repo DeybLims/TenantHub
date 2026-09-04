@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BillingPreviewModal } from "@/components/billing/BillingPreviewModal";
 import { BillingSummaryWidgets } from "@/components/billing/BillingSummaryWidgets";
 import { BillingTable } from "@/components/billing/BillingTable";
@@ -137,14 +137,19 @@ export function BillingPage() {
   const isError = tenantsQuery.isError || billingQuery.isError;
   const error = tenantsQuery.error ?? billingQuery.error;
 
+  // Open preview once when arriving via ?room= — do not reopen when date filters change.
+  const focusedRoomOpened = useRef<string | null>(null);
   useEffect(() => {
     if (!focusRoom || filteredRows.length === 0) return;
+    if (focusedRoomOpened.current === focusRoom) return;
+
     const roomNumber = Number(focusRoom);
     const match = filteredRows.find((row) => row.room === roomNumber);
-    if (match) {
-      setSelectedRow(match);
-      setIsPreviewOpen(true);
-    }
+    if (!match) return;
+
+    focusedRoomOpened.current = focusRoom;
+    setSelectedRow(match);
+    setIsPreviewOpen(true);
   }, [focusRoom, filteredRows]);
 
   const handleBillGenerated = () => {

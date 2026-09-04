@@ -469,7 +469,7 @@ export function InvoiceModal({
                     value={elecCurr}
                     disabled={formLocked}
                     onChange={(event) => setElecCurr(event.target.value)}
-                    className={inputClass}
+                    className={`${inputClass} ${elecReadingInvalid ? "border-red-400 focus:border-red-500 focus:ring-red-500/20" : ""}`}
                   />
                 </div>
                 <div>
@@ -481,11 +481,14 @@ export function InvoiceModal({
                     value={electricityRate}
                     placeholder={String(ELECTRICITY_SELLING_RATE)}
                     disabled={formLocked}
-                    onChange={(event) =>
-                      setElectricityRate(
-                        Number(event.target.value) || ELECTRICITY_SELLING_RATE,
-                      )
-                    }
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      const rate = Number.isFinite(next)
+                        ? next
+                        : ELECTRICITY_SELLING_RATE;
+                      setElectricityRate(rate);
+                      setElectricitySpecial(rate !== ELECTRICITY_SELLING_RATE);
+                    }}
                     className={inputClass}
                     aria-label="Electricity rate"
                   />
@@ -493,9 +496,20 @@ export function InvoiceModal({
               </div>
               <ToggleSwitch
                 enabled={electricitySpecial}
-                onChange={setElectricitySpecial}
+                onChange={(enabled) => {
+                  setElectricitySpecial(enabled);
+                  if (!enabled) {
+                    setElectricityRate(ELECTRICITY_SELLING_RATE);
+                  }
+                }}
               />
             </div>
+            {elecReadingInvalid && (
+              <p className="mt-1.5 text-xs text-red-600" role="alert">
+                Current electricity reading cannot be lower than previous (
+                {elecPrev}). Enter a higher reading or use a correction month.
+              </p>
+            )}
           </div>
 
           <div>
@@ -524,7 +538,7 @@ export function InvoiceModal({
                     value={waterCurr}
                     disabled={formLocked}
                     onChange={(event) => setWaterCurr(event.target.value)}
-                    className={inputClass}
+                    className={`${inputClass} ${waterReadingInvalid ? "border-red-400 focus:border-red-500 focus:ring-red-500/20" : ""}`}
                   />
                 </div>
                 <div>
@@ -536,16 +550,33 @@ export function InvoiceModal({
                     value={waterRate}
                     placeholder={String(baseWaterRate)}
                     disabled={formLocked}
-                    onChange={(event) =>
-                      setWaterRate(Number(event.target.value) || baseWaterRate)
-                    }
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      const rate = Number.isFinite(next) ? next : baseWaterRate;
+                      setWaterRate(rate);
+                      setWaterSpecial(rate !== baseWaterRate);
+                    }}
                     className={inputClass}
                     aria-label="Water rate"
                   />
                 </div>
               </div>
-              <ToggleSwitch enabled={waterSpecial} onChange={setWaterSpecial} />
+              <ToggleSwitch
+                enabled={waterSpecial}
+                onChange={(enabled) => {
+                  setWaterSpecial(enabled);
+                  if (!enabled) {
+                    setWaterRate(baseWaterRate);
+                  }
+                }}
+              />
             </div>
+            {waterReadingInvalid && (
+              <p className="mt-1.5 text-xs text-red-600" role="alert">
+                Current water reading cannot be lower than previous ({waterPrev}
+                ). Enter a higher reading or use a correction month.
+              </p>
+            )}
           </div>
 
           <CurrencyInput

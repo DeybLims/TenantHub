@@ -127,15 +127,9 @@ export function PayBalanceModal({
 
   useEffect(() => {
     if (!open) return;
+    // Prefer plain numeric text so "Proceed" stays enabled without comma-parse issues.
     setPaymentDate(new Date().toISOString().slice(0, 10));
-    setAmount(
-      outstanding > 0
-        ? outstanding.toLocaleString("en-PH", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })
-        : "",
-    );
+    setAmount(outstanding > 0 ? outstanding.toFixed(2) : "");
     setMethod("bank");
     setReference("");
     setError(null);

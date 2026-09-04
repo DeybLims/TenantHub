@@ -104,6 +104,14 @@ function BillDetailTable({
           </thead>
           <tbody>
             <tr className="border-t border-slate-100">
+              <td className="px-4 py-2.5 font-medium text-navy">Base Rent</td>
+              <td className="px-4 py-2.5 text-right text-gray-400">—</td>
+              <td className="px-4 py-2.5 text-right text-gray-400">—</td>
+              <td className="px-4 py-2.5 text-right font-semibold text-navy">
+                {formatPesoDecimal(bill.baseRent)}
+              </td>
+            </tr>
+            <tr className="border-t border-slate-100">
               <td className="px-4 py-2.5 font-medium text-navy">Electricity</td>
               <td className="px-4 py-2.5 text-right text-gray-600">
                 {bill.electricity.previous.toLocaleString("en-PH")}

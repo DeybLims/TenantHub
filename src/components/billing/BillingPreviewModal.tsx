@@ -11,7 +11,9 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatLongDate, formatPesoDecimal } from "@/lib/format";
 import {
+  billUserNotes,
   formatStatementPeriodCompact,
+  parsePaymentActivityLines,
   summarizeBills,
 } from "@/lib/mapBillingViewModel";
 import { getTenantInitials } from "@/lib/tenantInitials";
@@ -60,25 +62,9 @@ function SummaryCard({
 }
 
 function parsePaymentActivities(bill: Bill): string[] {
-  const fromNotes =
-    bill.notes
-      ?.split("\n")
-      .map((line) => line.trim())
-      .filter((line) => /^(CASH|BANK TRANSFER|ONLINE|PAYMENT)/i.test(line)) ??
-    [];
-
-  if (fromNotes.length > 0) return fromNotes;
-
-  if (bill.amountPaid > 0) {
-    return [
-      [
-        bill.datePaid ? formatLongDate(bill.datePaid) : "Payment recorded",
-        `CASH - ${formatPesoDecimal(bill.amountPaid)}`,
-      ].join(" "),
-    ];
-  }
-
-  return [];
+  // Only show real payment-activity lines still stored on older bills.
+  // New payments no longer write those lines into Notes (avoids stacking/duplication).
+  return parsePaymentActivityLines(bill.notes);
 }
 
 function BillDetailTable({
@@ -89,6 +75,7 @@ function BillDetailTable({
   onPayBalance?: (bill: Bill) => void;
 }) {
   const paymentActivities = parsePaymentActivities(bill);
+  const userNotes = billUserNotes(bill.notes);
 
   return (
     <div className="space-y-3 bg-blue-50/40 px-4 py-4">
@@ -194,18 +181,19 @@ function BillDetailTable({
         </div>
       )}
 
-      <div>
-        <label className="mb-1 block text-xs font-medium text-gray-500">
-          Notes
-        </label>
-        <textarea
-          readOnly
-          rows={2}
-          value={bill.notes || ""}
-          placeholder="Add notes here..."
-          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-navy"
-        />
-      </div>
+      {userNotes ? (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Notes
+          </label>
+          <textarea
+            readOnly
+            rows={2}
+            value={userNotes}
+            className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-navy"
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -391,12 +379,12 @@ export function BillingPreviewModal({
 
           <section>
             <h3 className="mb-3 text-sm font-bold text-navy">
-              Billing History (Within Selected Range)
+              Billing History (Overall Statement)
             </h3>
 
             {bills.length === 0 ? (
               <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-gray-500">
-                No bills in this period.
+                No bills for this tenant yet.
               </p>
             ) : (
               <div className="overflow-x-auto rounded-lg border border-slate-200">

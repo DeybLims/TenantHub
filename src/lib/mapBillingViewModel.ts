@@ -106,17 +106,16 @@ export function buildBillsForRoom(
   toDate?: string,
 ): Bill[] {
   const tenant = tenants.find((item) => item.Room === room);
-  const from = fromDate ? new Date(fromDate) : null;
-  const to = toDate ? new Date(toDate) : null;
-  if (to) to.setHours(23, 59, 59, 999);
+  const fromKey = fromDate ? billingMonthKey(fromDate) : "";
+  const toKey = toDate ? billingMonthKey(toDate) : "";
 
   return billingRows
     .filter((row) => readRoom(row.Room) === room)
     .filter((row) => {
-      const monthDate = new Date(String(row.Month));
-      if (Number.isNaN(monthDate.getTime())) return true;
-      if (from && monthDate < from) return false;
-      if (to && monthDate > to) return false;
+      const rowKey = billingMonthKey(String(row.Month));
+      if (!rowKey) return true;
+      if (fromKey && rowKey < fromKey) return false;
+      if (toKey && rowKey > toKey) return false;
       return true;
     })
     .map((row) => sheetRowToBill(row, tenant))
@@ -189,4 +188,27 @@ export function formatBillDateBlock(dateValue: string): {
     day: String(date.getDate()).padStart(2, "0"),
     year: String(date.getFullYear()),
   };
+}
+
+export function isPaymentActivityLine(line: string): boolean {
+  return /^(CASH|BANK TRANSFER|ONLINE|PAYMENT)/i.test(line.trim());
+}
+
+/** Payment lines stored in Notes (from Pay Balance). */
+export function parsePaymentActivityLines(notes?: string): string[] {
+  if (!notes?.trim()) return [];
+  return notes
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && isPaymentActivityLine(line));
+}
+
+/** User-facing notes only — excludes payment activity lines. */
+export function billUserNotes(notes?: string): string {
+  if (!notes?.trim()) return "";
+  return notes
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !isPaymentActivityLine(line))
+    .join("\n");
 }

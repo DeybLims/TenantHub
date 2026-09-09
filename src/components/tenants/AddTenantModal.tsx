@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { Calendar, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import type { VacantTenantSlot } from "@/lib/tenantRooms";
@@ -231,40 +231,28 @@ export function AddTenantModal({
             </div>
             <div>
               <FieldLabel>Lease Start</FieldLabel>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={form.leaseStart}
-                  onChange={(event) =>
-                    updateField("leaseStart", event.target.value)
-                  }
-                  disabled={!hasVacancy}
-                  className={`${inputClass} pr-10`}
-                />
-                <Calendar
-                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                  aria-hidden
-                />
-              </div>
+              <input
+                type="date"
+                value={form.leaseStart}
+                onChange={(event) =>
+                  updateField("leaseStart", event.target.value)
+                }
+                disabled={!hasVacancy}
+                className={inputClass}
+              />
             </div>
             <div>
               <FieldLabel>Move-in Date</FieldLabel>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={form.moveInDate}
-                  onChange={(event) =>
-                    updateField("moveInDate", event.target.value)
-                  }
-                  disabled={!hasVacancy}
-                  required
-                  className={`${inputClass} pr-10`}
-                />
-                <Calendar
-                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                  aria-hidden
-                />
-              </div>
+              <input
+                type="date"
+                value={form.moveInDate}
+                onChange={(event) =>
+                  updateField("moveInDate", event.target.value)
+                }
+                disabled={!hasVacancy}
+                required
+                className={inputClass}
+              />
             </div>
           </div>
 

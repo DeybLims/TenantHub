@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { Calendar, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getPreviousMeterReadings,
@@ -38,6 +38,8 @@ interface InvoiceModalProps {
 
 const inputClass =
   "w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-navy focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
+
+const dateInputClass = `${inputClass} [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none`;
 
 const readOnlyClass =
   "w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-navy";
@@ -89,17 +91,20 @@ function CurrencyInput({
 function ToggleSwitch({
   enabled,
   onChange,
+  disabled = false,
 }: {
   enabled: boolean;
   onChange: (value: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex flex-col items-end gap-1 pb-1">
       <span className="text-[10px] font-medium text-gray-500">Special Rate</span>
       <button
         type="button"
+        disabled={disabled}
         onClick={() => onChange(!enabled)}
-        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
           enabled ? "bg-blue-500" : "bg-gray-200"
         }`}
         aria-pressed={enabled}
@@ -119,13 +124,15 @@ function billingDatesForMonth(selectedMonth: string): {
   dueDate: string;
 } {
   const base =
-    billingMonthToDateInput(selectedMonth) || new Date().toISOString().slice(0, 10);
-  const date = new Date(base);
+    billingMonthToDateInput(selectedMonth) ||
+    new Date().toISOString().slice(0, 10);
+  const date = new Date(`${base}T12:00:00`);
   const year = date.getFullYear();
   const monthIndex = date.getMonth();
+  const pad = (n: number) => String(n).padStart(2, "0");
   return {
-    billingDate: new Date(year, monthIndex, 15).toISOString().slice(0, 10),
-    dueDate: new Date(year, monthIndex, 21).toISOString().slice(0, 10),
+    billingDate: `${year}-${pad(monthIndex + 1)}-15`,
+    dueDate: `${year}-${pad(monthIndex + 1)}-20`,
   };
 }
 
@@ -181,7 +188,6 @@ export function InvoiceModal({
   }, [billingRows, billingMonthForCheck, selectedTenant]);
 
   const billingMonthLabel = formatMonthLabel(billingMonthForCheck);
-  const formLocked = isDuplicate;
 
   useEffect(() => {
     if (!open) return;
@@ -206,12 +212,19 @@ export function InvoiceModal({
     setError(null);
   }, [open, selectedMonth]);
 
+  // Load tenant defaults only when the selected room changes — not when
+  // billingDate/billingRows flicker, which was wiping Current readings mid-type.
+  const selectedRoom = selectedTenant?.Room;
   useEffect(() => {
-    if (!selectedTenant) return;
+    if (!open || !selectedTenant || selectedRoom == null) return;
 
     setTenantName(selectedTenant.Name);
+    setElectricitySpecial(false);
     setElectricityRate(ELECTRICITY_SELLING_RATE);
-    setWaterRate(getWaterSellingRate(selectedTenant.Room, billingMonthForCheck));
+    setWaterSpecial(false);
+    setWaterRate(
+      getWaterSellingRate(selectedTenant.Room, billingDate || selectedMonth),
+    );
     setBaseRent(
       selectedTenant.Rent.toLocaleString("en-PH", {
         minimumFractionDigits: 2,
@@ -228,16 +241,22 @@ export function InvoiceModal({
     setElecPrev(String(ePrev));
     setWaterPrev(String(wPrev));
 
-    if (
-      !hasBillForRoomMonth(
-        billingRows,
+    requestAnimationFrame(() => elecCurrRef.current?.focus());
+    // intentionally omit billingRows/billingDate — room change only
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- room-scoped reset
+  }, [open, selectedRoom]);
+
+  useEffect(() => {
+    if (!selectedTenant) return;
+    setWaterRate((current) => {
+      const next = getWaterSellingRate(
         selectedTenant.Room,
-        billingDate || selectedMonth,
-      )
-    ) {
-      requestAnimationFrame(() => elecCurrRef.current?.focus());
-    }
-  }, [selectedTenant, billingRows, selectedMonth, billingDate]);
+        billingMonthForCheck,
+      );
+      if (!waterSpecial) return next;
+      return current;
+    });
+  }, [selectedTenant, billingMonthForCheck, waterSpecial]);
 
   const allowNegativeConsumption = isCorrectionMonth(billingMonthForCheck);
 
@@ -246,6 +265,8 @@ export function InvoiceModal({
     : WATER_RATE_STANDARD;
 
   const calculatedElecBill = useMemo(() => {
+    // Empty current = not entered yet → show ₱0 (avoid May correction treating "" as 0 reading).
+    if (elecCurr.trim() === "") return 0;
     const usage = calcConsumption(
       readSheetNumber(elecPrev),
       readSheetNumber(elecCurr),
@@ -255,6 +276,7 @@ export function InvoiceModal({
   }, [electricityRate, elecCurr, elecPrev, allowNegativeConsumption]);
 
   const calculatedWaterBill = useMemo(() => {
+    if (waterCurr.trim() === "") return 0;
     const usage = calcConsumption(
       readSheetNumber(waterPrev),
       readSheetNumber(waterCurr),
@@ -393,33 +415,21 @@ export function InvoiceModal({
             </div>
             <div>
               <FieldLabel>Billing Date</FieldLabel>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={billingDate}
-                  onChange={(event) => setBillingDate(event.target.value)}
-                  className={`${inputClass} pr-10`}
-                />
-                <Calendar
-                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                  aria-hidden
-                />
-              </div>
+              <input
+                type="date"
+                value={billingDate}
+                onChange={(event) => setBillingDate(event.target.value)}
+                className={dateInputClass}
+              />
             </div>
             <div>
               <FieldLabel>Due Date</FieldLabel>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={dueDate}
-                  onChange={(event) => setDueDate(event.target.value)}
-                  className={`${inputClass} pr-10`}
-                />
-                <Calendar
-                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                  aria-hidden
-                />
-              </div>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
+                className={dateInputClass}
+              />
             </div>
           </div>
 
@@ -429,7 +439,8 @@ export function InvoiceModal({
               role="alert"
             >
               Invoice denied: Room {selectedTenant.Room} already has a bill for{" "}
-              {billingMonthLabel}.
+              {billingMonthLabel}. Change the billing date to a different month
+              to create a new invoice.
             </div>
           )}
 
@@ -439,7 +450,6 @@ export function InvoiceModal({
             label="Base Rent"
             value={baseRent}
             onChange={setBaseRent}
-            disabled={formLocked}
           />
 
           <div>
@@ -463,24 +473,21 @@ export function InvoiceModal({
                   <FieldLabel>Current</FieldLabel>
                   <input
                     ref={elecCurrRef}
-                    type="number"
-                    min={0}
-                    step="any"
+                    type="text"
+                    inputMode="decimal"
                     value={elecCurr}
-                    disabled={formLocked}
                     onChange={(event) => setElecCurr(event.target.value)}
+                    placeholder="Enter reading"
                     className={`${inputClass} ${elecReadingInvalid ? "border-red-400 focus:border-red-500 focus:ring-red-500/20" : ""}`}
                   />
                 </div>
                 <div>
                   <FieldLabel>Rate</FieldLabel>
                   <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={electricityRate}
+                    type="text"
+                    inputMode="decimal"
+                    value={String(electricityRate)}
                     placeholder={String(ELECTRICITY_SELLING_RATE)}
-                    disabled={formLocked}
                     onChange={(event) => {
                       const next = Number(event.target.value);
                       const rate = Number.isFinite(next)
@@ -532,24 +539,21 @@ export function InvoiceModal({
                 <div>
                   <FieldLabel>Current</FieldLabel>
                   <input
-                    type="number"
-                    min={0}
-                    step="any"
+                    type="text"
+                    inputMode="decimal"
                     value={waterCurr}
-                    disabled={formLocked}
                     onChange={(event) => setWaterCurr(event.target.value)}
+                    placeholder="Enter reading"
                     className={`${inputClass} ${waterReadingInvalid ? "border-red-400 focus:border-red-500 focus:ring-red-500/20" : ""}`}
                   />
                 </div>
                 <div>
                   <FieldLabel>Rate</FieldLabel>
                   <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={waterRate}
+                    type="text"
+                    inputMode="decimal"
+                    value={String(waterRate)}
                     placeholder={String(baseWaterRate)}
-                    disabled={formLocked}
                     onChange={(event) => {
                       const next = Number(event.target.value);
                       const rate = Number.isFinite(next) ? next : baseWaterRate;
@@ -583,7 +587,6 @@ export function InvoiceModal({
             label="Other Charges"
             value={otherCharges}
             onChange={setOtherCharges}
-            disabled={formLocked}
           />
 
           <div className="space-y-4 border-t border-gray-200 pt-4">
@@ -609,7 +612,6 @@ export function InvoiceModal({
               <FieldLabel>Notes</FieldLabel>
               <textarea
                 value={notes}
-                disabled={formLocked}
                 onChange={(event) => setNotes(event.target.value)}
                 rows={3}
                 placeholder="Add notes here..."

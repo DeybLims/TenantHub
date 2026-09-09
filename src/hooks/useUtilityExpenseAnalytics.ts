@@ -12,17 +12,20 @@ import {
   computeMonthlyUtilityAnalytics,
   ELECTRICITY_SELLING_RATE,
   roundCurrency,
-  WATER_RATE_STANDARD,
   type UtilityProviderInputs,
 } from "@/lib/propertyBillingCalculations";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
 
 function calcTrueRate(amount: number, consumption: number): number {
-  if (consumption <= 0) return 0;
-  return roundCurrency(amount / consumption);
+  if (consumption <= 0 || amount <= 0) return 0;
+  return amount / consumption;
 }
 
+/**
+ * True rates come from the actual master bill ÷ consumption.
+ * Line amounts are that bill allocated across the entered kWh / m³.
+ */
 function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
   const meralcoTotalConsumption = roundCurrency(
     record.jjcConsumptionKwh +
@@ -30,30 +33,33 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
       record.motorConsumptionKwh,
   );
 
-  const baseElecRate = ELECTRICITY_SELLING_RATE;
+  const meralcoMasterBill = roundCurrency(Math.max(0, record.meralcoBillAmount));
+  const meralcoTrueRate = calcTrueRate(
+    meralcoMasterBill,
+    meralcoTotalConsumption,
+  );
+
   const motorElecRate =
     record.electricityMotorRate > 0
       ? record.electricityMotorRate
-      : baseElecRate;
+      : meralcoTrueRate;
 
   const jjcCalculatedAmount = roundCurrency(
-    record.jjcConsumptionKwh * baseElecRate,
+    record.jjcConsumptionKwh * meralcoTrueRate,
   );
   const apartmentCalculatedAmount = roundCurrency(
-    record.apartmentConsumptionKwh * baseElecRate,
+    record.apartmentConsumptionKwh * meralcoTrueRate,
   );
   const motorCalculatedAmount = roundCurrency(
     record.motorConsumptionKwh * motorElecRate,
   );
 
-  const computedMeralcoMasterBill = roundCurrency(
-    jjcCalculatedAmount + motorCalculatedAmount + apartmentCalculatedAmount,
+  // Prefer the entered master bill; fall back to allocated sum if motor uses a custom rate.
+  const allocatedMeralco = roundCurrency(
+    jjcCalculatedAmount + apartmentCalculatedAmount + motorCalculatedAmount,
   );
-
-  const meralcoTrueRate = calcTrueRate(
-    computedMeralcoMasterBill,
-    meralcoTotalConsumption,
-  );
+  const computedMeralcoMasterBill =
+    meralcoMasterBill > 0 ? meralcoMasterBill : allocatedMeralco;
 
   const miwdTotalConsumption = roundCurrency(
     record.miwdResidentialM3 +
@@ -61,31 +67,30 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
       record.pumpedWaterChargeM3,
   );
 
-  const baseWaterRate = WATER_RATE_STANDARD;
+  const miwdMasterBill = roundCurrency(Math.max(0, record.miwdBillAmount));
+  const miwdTrueRate = calcTrueRate(miwdMasterBill, miwdTotalConsumption);
+
   const waterMotorRate =
-    record.waterMotorRate > 0 ? record.waterMotorRate : baseWaterRate;
+    record.waterMotorRate > 0 ? record.waterMotorRate : miwdTrueRate;
 
   const miwdResidentialAmount = roundCurrency(
-    record.miwdResidentialM3 * baseWaterRate,
+    record.miwdResidentialM3 * miwdTrueRate,
   );
   const miwdCommercialAmount = roundCurrency(
-    record.miwdCommercialM3 * baseWaterRate,
+    record.miwdCommercialM3 * miwdTrueRate,
   );
   const pumpedWaterAmount = roundCurrency(
     record.pumpedWaterChargeM3 * waterMotorRate,
   );
 
-  const computedMiwdMasterBill = roundCurrency(
+  const allocatedMiwd = roundCurrency(
     miwdResidentialAmount + miwdCommercialAmount + pumpedWaterAmount,
   );
-
-  const miwdTrueRate = calcTrueRate(
-    computedMiwdMasterBill,
-    miwdTotalConsumption,
-  );
+  const computedMiwdMasterBill =
+    miwdMasterBill > 0 ? miwdMasterBill : allocatedMiwd;
 
   return {
-    meralcoTrueRate,
+    meralcoTrueRate: roundCurrency(meralcoTrueRate),
     meralcoTotalConsumption,
     jjcCalculatedAmount,
     motorCalculatedAmount,
@@ -94,7 +99,7 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
     meralcoBalance: roundCurrency(
       computedMeralcoMasterBill - record.meralcoPaidThisMonth,
     ),
-    miwdTrueRate,
+    miwdTrueRate: roundCurrency(miwdTrueRate),
     miwdTotalConsumption,
     miwdBalance: roundCurrency(
       computedMiwdMasterBill - record.miwdPaidThisMonth,
@@ -232,6 +237,12 @@ function allocatedUtilityPaid(row: SheetRow, bill: number): number {
   return 0;
 }
 
+function roomPaymentStatus(amountPaid: number, grandTotal: number): string {
+  if (amountPaid >= grandTotal && grandTotal > 0) return "Paid";
+  if (amountPaid > 0) return "Partial";
+  return "Unpaid";
+}
+
 interface UseUtilityExpenseAnalyticsOptions {
   selectedMonth: string;
   billingRows: SheetRow[];
@@ -280,47 +291,66 @@ export function useUtilityExpenseAnalytics({
     const tenantM3 = sheetAnalytics.sumWaterConsumption;
 
     const paidTenantBilled = roundCurrency(
-      sheetAnalytics.rooms.reduce(
-        (sum, room) =>
+      sheetAnalytics.rooms.reduce((sum, room) => {
+        const status = roomPaymentStatus(room.amountPaid, room.grandTotal);
+        return (
           sum +
           allocatedUtilityPaid(
             {
               TotalDue: room.grandTotal,
               Paid: room.amountPaid,
-              Status:
-                room.amountPaid >= room.grandTotal && room.grandTotal > 0
-                  ? "Paid"
-                  : room.amountPaid > 0
-                    ? "Partial"
-                    : "Unpaid",
+              Status: status,
             } as SheetRow,
-            room.elecBill + room.waterBill,
-          ),
-        0,
-      ),
+            room.elecBill,
+          )
+        );
+      }, 0),
     );
 
-    const tenantElectricityTrueCost = roundCurrency(
-      tenantKwh * derived.meralcoTrueRate,
-    );
-    const netElectricityProfit = roundCurrency(
-      paidTenantBilled - tenantElectricityTrueCost,
+    const paidTenantWaterBilled = roundCurrency(
+      sheetAnalytics.rooms.reduce((sum, room) => {
+        const status = roomPaymentStatus(room.amountPaid, room.grandTotal);
+        return (
+          sum +
+          allocatedUtilityPaid(
+            {
+              TotalDue: room.grandTotal,
+              Paid: room.amountPaid,
+              Status: status,
+            } as SheetRow,
+            room.waterBill,
+          )
+        );
+      }, 0),
     );
 
-    const tenantWaterRevenue = roundCurrency(
-      tenantM3 * record.miwdSpecialRate,
-    );
-    const trueTenantWaterCost = roundCurrency(
-      tenantM3 * derived.miwdTrueRate,
-    );
-    const waterMotorCost = roundCurrency(
-      record.motorConsumptionKwh > 0
-        ? record.motorConsumptionKwh * (record.waterMotorRate || derived.miwdTrueRate)
-        : derived.pumpedWaterAmount,
-    );
-    const netWaterProfit = roundCurrency(
-      tenantWaterRevenue - trueTenantWaterCost - waterMotorCost,
-    );
+    const hasMeralcoInputs =
+      record.meralcoBillAmount > 0 && derived.meralcoTotalConsumption > 0;
+    const tenantElectricityTrueCost = hasMeralcoInputs
+      ? roundCurrency(tenantKwh * derived.meralcoTrueRate)
+      : 0;
+    const netElectricityProfit = hasMeralcoInputs
+      ? roundCurrency(paidTenantBilled - tenantElectricityTrueCost)
+      : 0;
+
+    const hasMiwdInputs =
+      record.miwdBillAmount > 0 && derived.miwdTotalConsumption > 0;
+    const trueTenantWaterCost = hasMiwdInputs
+      ? roundCurrency(tenantM3 * derived.miwdTrueRate)
+      : 0;
+    const waterMotorCost = hasMiwdInputs
+      ? roundCurrency(
+          record.pumpedWaterChargeM3 *
+            (record.waterMotorRate > 0
+              ? record.waterMotorRate
+              : derived.miwdTrueRate),
+        )
+      : 0;
+    // Revenue = what tenants actually paid toward water (not m³ × special rate).
+    const tenantWaterRevenue = paidTenantWaterBilled;
+    const netWaterProfit = hasMiwdInputs
+      ? roundCurrency(tenantWaterRevenue - trueTenantWaterCost - waterMotorCost)
+      : 0;
 
     return {
       derived,
@@ -343,12 +373,9 @@ export function useUtilityExpenseAnalytics({
 
   const save = useCallback(() => {
     if (!selectedMonth) return;
-    const snapshot = deriveRates(record);
     const toSave = {
       ...record,
       billingMonth: selectedMonth,
-      meralcoBillAmount: snapshot.computedMeralcoMasterBill,
-      miwdBillAmount: snapshot.computedMiwdMasterBill,
     };
     saveExpenseRecord(selectedMonth, toSave);
     setRecord(toSave);

@@ -2,7 +2,6 @@
 
 import {
   Building2,
-  Calendar,
   ChevronRight,
   FileText,
   Mail,
@@ -339,35 +338,23 @@ export function TenantDetails({
               <label className="mb-1 block text-xs font-medium text-gray-500">
                 Lease Start
               </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={leaseStart}
-                  onChange={(event) => setLeaseStart(event.target.value)}
-                  className={`${fieldClass} pr-10`}
-                />
-                <Calendar
-                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                  aria-hidden
-                />
-              </div>
+              <input
+                type="date"
+                value={leaseStart}
+                onChange={(event) => setLeaseStart(event.target.value)}
+                className={fieldClass}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-500">
                 Move-in Date
               </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={moveInDate}
-                  onChange={(event) => setMoveInDate(event.target.value)}
-                  className={`${fieldClass} pr-10`}
-                />
-                <Calendar
-                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                  aria-hidden
-                />
-              </div>
+              <input
+                type="date"
+                value={moveInDate}
+                onChange={(event) => setMoveInDate(event.target.value)}
+                className={fieldClass}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-500">

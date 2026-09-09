@@ -12,7 +12,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { formatPesoDecimal } from "@/lib/format";
-import { formatStatementPeriodCompact } from "@/lib/mapBillingViewModel";
+import {
+  billUserNotes,
+  formatStatementPeriodCompact,
+} from "@/lib/mapBillingViewModel";
 import { billingMonthToDateInput } from "@/lib/months";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import { updateBill } from "@/services/api";
@@ -79,17 +82,16 @@ function deriveStatus(totalDue: number, paid: number): string {
 function buildPaymentPayload(
   bill: Bill,
   paymentAmount: number,
-  method: PaymentMethod,
+  _method: PaymentMethod,
   reference: string,
   paymentDate: string,
 ): UpdateBillPayload {
   const newPaid = bill.amountPaid + paymentAmount;
-  const methodLabel =
-    method === "cash" ? "CASH" : method === "bank" ? "BANK TRANSFER" : "ONLINE";
-  const paymentLine = `${methodLabel} - ${formatPesoDecimal(paymentAmount)}${
-    reference.trim() ? ` Reference/Notes: ${reference.trim()}` : ""
-  }`;
-  const notes = [bill.notes?.trim(), paymentLine].filter(Boolean).join("\n");
+  // User notes only — never stack CASH/BANK/ONLINE payment lines into Notes.
+  // Optional reference from Pay Balance is stored as a normal note if provided.
+  const notes = [billUserNotes(bill.notes), reference.trim()]
+    .filter(Boolean)
+    .join("\n");
 
   return {
     month: bill.billingMonth,
@@ -117,7 +119,7 @@ function buildPaymentPayload(
     billingDate: toOptionalIsoDate(bill.billingDate),
     dueDate: toOptionalIsoDate(bill.dueDate),
     datePaid: toOptionalIsoDate(paymentDate),
-    notes,
+    notes: notes || undefined,
   };
 }
 

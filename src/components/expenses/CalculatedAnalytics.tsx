@@ -134,6 +134,10 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
             label="Total Tenant Cost"
             value={formatExpenseAmount(analytics.tenantElectricityTrueCost)}
           />
+          <AnalyticsRow
+            label="True Rate"
+            value={`₱ ${analytics.derived.meralcoTrueRate.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} / kWh`}
+          />
           <ProfitBar
             label="NET ELECTRICITY PROFIT"
             value={formatPesoDecimal(analytics.netElectricityProfit)}
@@ -160,8 +164,18 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
             value={formatExpenseAmount(derived.pumpedWaterAmount)}
           />
           <AnalyticsRow
+            label="Paid Tenant Billed"
+            value={formatExpenseAmount(analytics.tenantWaterRevenue)}
+            emphasize
+            alignRight
+          />
+          <AnalyticsRow
             label="Total Tenant Cost"
             value={formatExpenseAmount(analytics.trueTenantWaterCost)}
+          />
+          <AnalyticsRow
+            label="True Rate"
+            value={`₱ ${analytics.derived.miwdTrueRate.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} / m³`}
           />
           <ProfitBar
             label="NET WATER PROFIT"

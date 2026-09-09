@@ -1,4 +1,5 @@
 import { normalizeBillingStatusLabel } from "@/components/tenants/tenantStatusStyles";
+import { billingMonthKey } from "@/lib/months";
 import { roundCurrency } from "@/lib/propertyBillingCalculations";
 import type { BillingDashboardSummary, BillingTableRow } from "@/types/billing";
 
@@ -52,15 +53,17 @@ export function filterBillingRowsByDateRange(
   fromDate: string,
   toDate: string,
 ): BillingTableRow[] {
-  const from = fromDate ? new Date(fromDate) : null;
-  const to = toDate ? new Date(toDate) : null;
-  if (to) to.setHours(23, 59, 59, 999);
+  // Compare by calendar month (YYYY-MM), not day-of-month.
+  // Default range starts on the 15th; bill months are stored as the 1st,
+  // so day-level compares incorrectly drop every bill in the from-month.
+  const fromKey = fromDate ? billingMonthKey(fromDate) : "";
+  const toKey = toDate ? billingMonthKey(toDate) : "";
 
   return rows.filter((row) => {
-    const monthDate = new Date(row.month);
-    if (Number.isNaN(monthDate.getTime())) return true;
-    if (from && monthDate < from) return false;
-    if (to && monthDate > to) return false;
+    const rowKey = billingMonthKey(row.month);
+    if (!rowKey) return true;
+    if (fromKey && rowKey < fromKey) return false;
+    if (toKey && rowKey > toKey) return false;
     return true;
   });
 }

@@ -40,15 +40,15 @@ export interface UtilityExpenseDerived {
   motorCalculatedAmount: number;
   /** apartmentConsumptionKwh * meralcoTrueRate */
   apartmentCalculatedAmount: number;
-  /** jjc + motor + apartment (auto master bill) */
+  /** Entered Meralco master bill (or allocated sum when bill is 0) */
   computedMeralcoMasterBill: number;
-  /** meralcoBillAmount - meralcoPaidThisMonth */
+  /** computedMeralcoMasterBill - meralcoPaidThisMonth */
   meralcoBalance: number;
   /** miwdBillAmount / total m³ */
   miwdTrueRate: number;
   /** residential + commercial + pumped m³ */
   miwdTotalConsumption: number;
-  /** miwdBillAmount - miwdPaidThisMonth */
+  /** computedMiwdMasterBill - miwdPaidThisMonth */
   miwdBalance: number;
   electricitySellingRate: number;
   /** residential m³ * true rate */
@@ -57,7 +57,7 @@ export interface UtilityExpenseDerived {
   miwdCommercialAmount: number;
   /** pumped m³ * waterMotorRate (or true rate) */
   pumpedWaterAmount: number;
-  /** residential + commercial + pumped (auto master bill) */
+  /** Entered MIWD master bill (or allocated sum when bill is 0) */
   computedMiwdMasterBill: number;
 }
 
@@ -65,12 +65,12 @@ export interface UtilityExpenseAnalytics {
   derived: UtilityExpenseDerived;
   tenantTotalConsumptionKwh: number;
   tenantTotalWaterM3: number;
-  /** Sum of tenant utility payments collected */
+  /** Sum of tenant electricity payments collected */
   paidTenantBilled: number;
   /** tenant kWh × meralco true rate */
   tenantElectricityTrueCost: number;
   netElectricityProfit: number;
-  /** tenant m³ × miwdSpecialRate */
+  /** Sum of tenant water payments collected */
   tenantWaterRevenue: number;
   /** tenant m³ × miwd true rate */
   trueTenantWaterCost: number;

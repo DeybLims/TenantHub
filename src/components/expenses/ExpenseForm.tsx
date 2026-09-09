@@ -184,8 +184,12 @@ export function ExpenseForm({
             <div className="space-y-4 border-t border-gray-200 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
               <CurrencyField
                 label="Meralco Master Bill Amount"
-                value={derived.computedMeralcoMasterBill}
-                readOnly
+                value={record.meralcoBillAmount}
+                onChange={(value) =>
+                  onRecordChange({ meralcoBillAmount: value })
+                }
+                highlight
+                placeholder="Enter master bill"
               />
               <CurrencyField
                 label="Amount Paid This Month"
@@ -234,8 +238,10 @@ export function ExpenseForm({
             <div className="space-y-4 border-t border-gray-200 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
               <CurrencyField
                 label="MIWD Master Bill Amount"
-                value={derived.computedMiwdMasterBill}
-                readOnly
+                value={record.miwdBillAmount}
+                onChange={(value) => onRecordChange({ miwdBillAmount: value })}
+                highlight
+                placeholder="Enter master bill"
               />
               <CurrencyField
                 label="Amount Paid This Month"

@@ -265,6 +265,21 @@ export async function updateSupabaseBill(
     Number(data.wBill) +
     Number(data.adjustment || 0);
 
+  const toPgDate = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+  };
+
+  const billingDate =
+    toPgDate(data.billingDate) ?? existing.billing_date ?? null;
+  const dueDate = toPgDate(data.dueDate) ?? existing.due_date ?? null;
+  const datePaid =
+    toPgDate(data.datePaid) ?? existing.date_paid ?? null;
+
   const { error } = await supabase
     .from("billing_records")
     .update({
@@ -281,8 +296,9 @@ export async function updateSupabaseBill(
       total_due: totalDue,
       paid: Number(data.paid) || 0,
       status: data.status || "Unpaid",
-      billing_date: data.billingDate || existing.billing_date,
-      due_date: data.dueDate || existing.due_date,
+      billing_date: billingDate,
+      due_date: dueDate,
+      date_paid: datePaid,
       notes: data.notes ?? existing.notes,
     })
     .eq("id", existing.id);

@@ -1,5 +1,7 @@
 "use client";
 
+import { CheckCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import {
   FloatingLabelField,
   floatingInputClass,
@@ -107,8 +109,44 @@ export function ExpenseForm({
   onExportPdf,
   isDirty = false,
 }: ExpenseFormProps) {
+  const [showSavedToast, setShowSavedToast] = useState(false);
+
+  useEffect(() => {
+    if (isDirty) setShowSavedToast(false);
+  }, [isDirty]);
+
+  useEffect(() => {
+    if (!showSavedToast) return;
+    const timer = window.setTimeout(() => setShowSavedToast(false), 3500);
+    return () => window.clearTimeout(timer);
+  }, [showSavedToast]);
+
+  const handleSave = () => {
+    onSave();
+    setShowSavedToast(true);
+  };
+
   return (
     <article className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      {showSavedToast && (
+        <div
+          className="fixed bottom-6 right-6 z-[120] flex max-w-sm items-start gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-lg"
+          role="status"
+          aria-live="polite"
+        >
+          <CheckCircle2
+            className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500"
+            aria-hidden
+          />
+          <div>
+            <p className="text-sm font-semibold text-navy">Changes saved</p>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Utility expenses for this month were updated successfully.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="border-b border-gray-100 px-6 py-4">
         <h2 className="text-base font-bold text-navy">
           Utility Expenses & Distribution
@@ -218,6 +256,11 @@ export function ExpenseForm({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
+        {showSavedToast && (
+          <p className="mr-auto text-sm font-medium text-emerald-600">
+            Changes saved
+          </p>
+        )}
         <button
           type="button"
           onClick={onCancel}
@@ -228,10 +271,10 @@ export function ExpenseForm({
         </button>
         <button
           type="button"
-          onClick={onSave}
+          onClick={handleSave}
           className="rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-600"
         >
-          Save Changes
+          {showSavedToast && !isDirty ? "Saved" : "Save Changes"}
         </button>
         <button
           type="button"

@@ -31,10 +31,25 @@ function buildBillId(row: SheetRow, room: number): string {
 }
 
 function toIsoDate(value: string | null | undefined, fallback: string): string {
-  if (!value) return fallback;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return fallback;
-  return date.toISOString().slice(0, 10);
+  const tryParse = (raw: string): string | null => {
+    // Already YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString().slice(0, 10);
+  };
+
+  if (value) {
+    const parsed = tryParse(value.trim());
+    if (parsed) return parsed;
+  }
+
+  if (fallback) {
+    const parsed = tryParse(fallback.trim());
+    if (parsed) return parsed;
+  }
+
+  return new Date().toISOString().slice(0, 10);
 }
 
 export function sheetRowToBill(

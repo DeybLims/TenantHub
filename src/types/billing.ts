@@ -102,6 +102,7 @@ export interface UpdateBillPayload {
   status: string;
   billingDate?: string;
   dueDate?: string;
+  datePaid?: string;
   notes?: string;
 }
 

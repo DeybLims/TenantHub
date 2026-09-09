@@ -4,7 +4,6 @@ import { useMutation } from "@tanstack/react-query";
 import {
   Banknote,
   Building2,
-  Calendar,
   CreditCard,
   FileText,
   Smartphone,
@@ -14,9 +13,21 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { formatPesoDecimal } from "@/lib/format";
 import { formatStatementPeriodCompact } from "@/lib/mapBillingViewModel";
+import { billingMonthToDateInput } from "@/lib/months";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import { updateBill } from "@/services/api";
 import type { Bill, UpdateBillPayload } from "@/types/billing";
+
+function toOptionalIsoDate(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const fromMonth = billingMonthToDateInput(trimmed);
+  if (fromMonth) return fromMonth;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString().slice(0, 10);
+}
 
 export type PaymentMethod = "cash" | "bank" | "online";
 
@@ -70,6 +81,7 @@ function buildPaymentPayload(
   paymentAmount: number,
   method: PaymentMethod,
   reference: string,
+  paymentDate: string,
 ): UpdateBillPayload {
   const newPaid = bill.amountPaid + paymentAmount;
   const methodLabel =
@@ -102,8 +114,9 @@ function buildPaymentPayload(
     totalDue: bill.totalDue,
     paid: newPaid,
     status: deriveStatus(bill.totalDue, newPaid),
-    billingDate: bill.billingDate,
-    dueDate: bill.dueDate,
+    billingDate: toOptionalIsoDate(bill.billingDate),
+    dueDate: toOptionalIsoDate(bill.dueDate),
+    datePaid: toOptionalIsoDate(paymentDate),
     notes,
   };
 }
@@ -173,7 +186,9 @@ export function PayBalanceModal({
       return;
     }
 
-    mutation.mutate(buildPaymentPayload(bill, paymentAmount, method, reference));
+    mutation.mutate(
+      buildPaymentPayload(bill, paymentAmount, method, reference, paymentDate),
+    );
   };
 
   return (
@@ -245,19 +260,13 @@ export function PayBalanceModal({
             <label className="mb-1 block text-xs font-medium text-gray-500">
               Date
             </label>
-            <div className="relative">
-              <input
-                type="date"
-                value={paymentDate}
-                onChange={(event) => setPaymentDate(event.target.value)}
-                className={`${inputClass} pr-10`}
-                required
-              />
-              <Calendar
-                className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                aria-hidden
-              />
-            </div>
+            <input
+              type="date"
+              value={paymentDate}
+              onChange={(event) => setPaymentDate(event.target.value)}
+              className={inputClass}
+              required
+            />
           </div>
 
           <div>

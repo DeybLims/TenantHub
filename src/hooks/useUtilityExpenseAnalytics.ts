@@ -324,31 +324,23 @@ export function useUtilityExpenseAnalytics({
       }, 0),
     );
 
-    const hasMeralcoInputs =
-      record.meralcoBillAmount > 0 && derived.meralcoTotalConsumption > 0;
-    const tenantElectricityTrueCost = hasMeralcoInputs
-      ? roundCurrency(tenantKwh * derived.meralcoTrueRate)
-      : 0;
-    const netElectricityProfit = hasMeralcoInputs
+    // Total Tenant Cost follows the form allocation (master bill × share of
+    // consumption) — NOT billing-sheet meter totals × true rate. Multiplying
+    // sheet consumption by a rate from a partial test input (e.g. 1 m³ / ₱45)
+    // produced a huge stuck-looking number (~₱47,925).
+    const tenantElectricityTrueCost = derived.apartmentCalculatedAmount;
+    const hasMeralcoCostBasis = record.meralcoBillAmount > 0;
+    const netElectricityProfit = hasMeralcoCostBasis
       ? roundCurrency(paidTenantBilled - tenantElectricityTrueCost)
       : 0;
 
-    const hasMiwdInputs =
-      record.miwdBillAmount > 0 && derived.miwdTotalConsumption > 0;
-    const trueTenantWaterCost = hasMiwdInputs
-      ? roundCurrency(tenantM3 * derived.miwdTrueRate)
-      : 0;
-    const waterMotorCost = hasMiwdInputs
-      ? roundCurrency(
-          record.pumpedWaterChargeM3 *
-            (record.waterMotorRate > 0
-              ? record.waterMotorRate
-              : derived.miwdTrueRate),
-        )
-      : 0;
-    // Revenue = what tenants actually paid toward water (not m³ × special rate).
+    const trueTenantWaterCost = roundCurrency(
+      derived.miwdResidentialAmount + derived.miwdCommercialAmount,
+    );
+    const waterMotorCost = derived.pumpedWaterAmount;
     const tenantWaterRevenue = paidTenantWaterBilled;
-    const netWaterProfit = hasMiwdInputs
+    const hasMiwdCostBasis = record.miwdBillAmount > 0;
+    const netWaterProfit = hasMiwdCostBasis
       ? roundCurrency(tenantWaterRevenue - trueTenantWaterCost - waterMotorCost)
       : 0;
 

@@ -67,12 +67,12 @@ export interface UtilityExpenseAnalytics {
   tenantTotalWaterM3: number;
   /** Sum of tenant electricity payments collected */
   paidTenantBilled: number;
-  /** tenant kWh × meralco true rate */
+  /** Apartment share of Meralco master bill (form allocation) */
   tenantElectricityTrueCost: number;
   netElectricityProfit: number;
   /** Sum of tenant water payments collected */
   tenantWaterRevenue: number;
-  /** tenant m³ × miwd true rate */
+  /** Residential + commercial share of MIWD master bill (form allocation) */
   trueTenantWaterCost: number;
   netWaterProfit: number;
   /** motor overhead cost for water */

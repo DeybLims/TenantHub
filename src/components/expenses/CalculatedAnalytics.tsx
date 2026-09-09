@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Droplet, Zap } from "lucide-react";
-import { formatExpenseAmount, formatPesoDecimal } from "@/lib/format";
+import { formatExpenseAmount } from "@/lib/format";
 import type { UtilityExpenseAnalytics } from "@/components/expenses/types";
 
 interface CalculatedAnalyticsProps {
@@ -59,14 +59,13 @@ function AnalyticsRow({
 
 function ProfitBar({
   label,
-  value,
   amount,
 }: {
   label: string;
-  value: string;
   amount: number;
 }) {
   const positive = amount >= 0;
+  const absolute = formatExpenseAmount(Math.abs(amount));
   return (
     <div className="mt-5 overflow-hidden rounded-lg border border-emerald-100">
       <div className="flex items-stretch">
@@ -78,8 +77,8 @@ function ProfitBar({
             positive ? "bg-emerald-400" : "bg-red-500"
           }`}
         >
-          {positive ? "+" : ""}
-          {value}
+          {positive ? "+" : "−"}
+          {absolute}
         </div>
       </div>
     </div>
@@ -134,13 +133,8 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
             label="Total Tenant Cost"
             value={formatExpenseAmount(analytics.tenantElectricityTrueCost)}
           />
-          <AnalyticsRow
-            label="True Rate"
-            value={`₱ ${analytics.derived.meralcoTrueRate.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} / kWh`}
-          />
           <ProfitBar
             label="NET ELECTRICITY PROFIT"
-            value={formatPesoDecimal(analytics.netElectricityProfit)}
             amount={analytics.netElectricityProfit}
           />
         </AnalyticsCard>
@@ -173,13 +167,8 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
             label="Total Tenant Cost"
             value={formatExpenseAmount(analytics.trueTenantWaterCost)}
           />
-          <AnalyticsRow
-            label="True Rate"
-            value={`₱ ${analytics.derived.miwdTrueRate.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} / m³`}
-          />
           <ProfitBar
             label="NET WATER PROFIT"
-            value={formatPesoDecimal(analytics.netWaterProfit)}
             amount={analytics.netWaterProfit}
           />
         </AnalyticsCard>

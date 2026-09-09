@@ -1,4 +1,6 @@
 import { Calendar, ChevronDown } from "lucide-react";
+import { useMemo } from "react";
+import { billingMonthsMatch } from "@/lib/months";
 import type { MonthOption } from "@/types/dashboard";
 
 interface MonthSelectProps {
@@ -6,7 +8,7 @@ interface MonthSelectProps {
   value: string;
   onChange: (month: string) => void;
   disabled?: boolean;
-  /** Show "This Month" instead of the month label when the latest month is selected. */
+  /** Label the latest month as "This Month · {label}" so older months stay visible. */
   useThisMonthLabel?: boolean;
 }
 
@@ -19,6 +21,11 @@ export function MonthSelect({
 }: MonthSelectProps) {
   const latestMonth = months.at(-1)?.value;
 
+  const selectedValue = useMemo(() => {
+    const match = months.find((month) => billingMonthsMatch(month.value, value));
+    return match?.value ?? value;
+  }, [months, value]);
+
   return (
     <div className="relative">
       <Calendar
@@ -26,7 +33,7 @@ export function MonthSelect({
         aria-hidden
       />
       <select
-        value={value}
+        value={selectedValue}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled || months.length === 0}
         className="appearance-none rounded-full border border-gray-200 bg-white py-2.5 pl-10 pr-10 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -34,8 +41,10 @@ export function MonthSelect({
       >
         {months.map((month) => (
           <option key={month.value} value={month.value}>
-            {useThisMonthLabel && month.value === latestMonth
-              ? "This Month"
+            {useThisMonthLabel &&
+            latestMonth &&
+            billingMonthsMatch(month.value, latestMonth)
+              ? `This Month · ${month.label}`
               : month.label}
           </option>
         ))}

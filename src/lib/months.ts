@@ -50,12 +50,10 @@ export function monthChartLabel(month: string): string {
 
 export function sortMonths(months: string[]): string[] {
   return [...months].sort((a, b) => {
-    if (isIsoMonth(a) && isIsoMonth(b)) {
-      return new Date(a).getTime() - new Date(b).getTime();
-    }
-    const ai = MONTH_NAMES.indexOf(a as (typeof MONTH_NAMES)[number]);
-    const bi = MONTH_NAMES.indexOf(b as (typeof MONTH_NAMES)[number]);
-    return ai - bi;
+    const keyA = billingMonthKey(a);
+    const keyB = billingMonthKey(b);
+    if (keyA && keyB) return keyA.localeCompare(keyB);
+    return String(a).localeCompare(String(b));
   });
 }
 

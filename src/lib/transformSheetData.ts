@@ -8,6 +8,8 @@ import type {
 import type { SheetRow } from "@/types/sheet";
 import {
   MONTH_NAMES,
+  billingMonthsMatch,
+  billingMonthKey,
   formatMonthLabel,
   isIsoMonth,
   monthChartLabel,
@@ -313,8 +315,11 @@ function buildMonthDashboard(rows: SheetRow[]) {
 }
 
 function resolveMonth(rows: SheetRow[], month?: string): string {
-  if (month && rows.some((r) => r.Month === month && isTenantRoom(r.Room))) {
-    return month;
+  if (month) {
+    const match = rows.find(
+      (r) => isTenantRoom(r.Room) && billingMonthsMatch(String(r.Month), month),
+    );
+    if (match) return String(match.Month);
   }
   return getDefaultMonth(rows);
 }
@@ -356,20 +361,23 @@ export function getDefaultMonth(rows: SheetRow[]): string {
 
 export function getAvailableMonths(rows: SheetRow[]) {
   const legacy = isLegacySheet(rows);
-  const months = legacy
+  const rawMonths = legacy
     ? MONTH_NAMES.filter((name) =>
         rows.some(
           (r) =>
             r.Month === name && isTenantRoom(r.Room) && rowTotalDue(r) > 0,
         ),
       )
-    : [
-        ...new Set(
-          rows.filter((r) => isTenantRoom(r.Room)).map((r) => r.Month),
-        ),
-      ];
+    : rows.filter((r) => isTenantRoom(r.Room)).map((r) => String(r.Month));
 
-  return sortMonths(months).map((value) => ({
+  // One option per calendar month (handles "January 2026" vs ISO duplicates).
+  const byKey = new Map<string, string>();
+  for (const value of rawMonths) {
+    const key = billingMonthKey(value) || value;
+    if (!byKey.has(key)) byKey.set(key, value);
+  }
+
+  return sortMonths([...byKey.values()]).map((value) => ({
     value,
     label: formatMonthLabel(value),
   }));
@@ -380,7 +388,9 @@ export function transformSheetToDashboard(
   month?: string,
 ): DashboardData {
   const activeMonth = resolveMonth(rows, month);
-  const monthRows = rows.filter((r) => r.Month === activeMonth);
+  const monthRows = rows.filter((r) =>
+    billingMonthsMatch(String(r.Month), activeMonth),
+  );
   const dashboard = buildMonthDashboard(monthRows);
   const legacy = isLegacySheet(rows);
 
@@ -391,15 +401,12 @@ export function transformSheetToDashboard(
             r.Month === name && isTenantRoom(r.Room) && rowTotalDue(r) > 0,
         ),
       )
-    : [
-        ...new Set(
-          rows.filter((r) => isTenantRoom(r.Room)).map((r) => r.Month),
-        ),
-      ];
+    : getAvailableMonths(rows).map((option) => option.value);
 
   const revenueTrend = sortMonths(trendMonths).map((monthKey) => {
     const monthTenants = rows.filter(
-      (r) => r.Month === monthKey && isTenantRoom(r.Room),
+      (r) =>
+        billingMonthsMatch(String(r.Month), monthKey) && isTenantRoom(r.Room),
     );
     const revenue = monthTenants
       .filter((r) => r.Status !== "Vacant")

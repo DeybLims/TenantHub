@@ -14,28 +14,19 @@ import {
 } from "@/components/dashboard/DashboardSkeleton";
 import { useUtilityExpenseAnalytics } from "@/hooks/useUtilityExpenseAnalytics";
 import {
-  fetchBilling,
   fetchBillingRows,
   fetchTenants,
   getMockBillingRows,
   getMockDashboardData,
   getMockTenants,
 } from "@/services/api";
+import { transformSheetToDashboard } from "@/lib/transformSheetData";
 import type { UtilityRow } from "@/types/dashboard";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
 export function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState<string>("");
-
-  const { data, isLoading, isFetching, isError, error } = useQuery({
-    queryKey: ["dashboard", selectedMonth || "default"],
-    queryFn: () =>
-      USE_MOCK
-        ? getMockDashboardData()
-        : fetchBilling(selectedMonth || undefined),
-    placeholderData: (previous) => previous,
-  });
 
   const billingQuery = useQuery({
     queryKey: ["billing", "rows"],
@@ -48,6 +39,18 @@ export function Dashboard() {
     queryFn: () =>
       USE_MOCK ? Promise.resolve(getMockTenants()) : fetchTenants(),
   });
+
+  const data = useMemo(() => {
+    if (USE_MOCK) return getMockDashboardData();
+    const rows = billingQuery.data;
+    if (!rows?.length) return undefined;
+    return transformSheetToDashboard(rows, selectedMonth || undefined);
+  }, [billingQuery.data, selectedMonth]);
+
+  const isLoading = billingQuery.isLoading;
+  const isFetching = billingQuery.isFetching;
+  const isError = billingQuery.isError;
+  const error = billingQuery.error;
 
   useEffect(() => {
     if (data?.activeMonth && !selectedMonth) {

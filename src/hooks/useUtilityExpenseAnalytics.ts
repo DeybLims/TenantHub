@@ -12,6 +12,7 @@ import {
   computeMonthlyUtilityAnalytics,
   ELECTRICITY_SELLING_RATE,
   roundCurrency,
+  WATER_RATE_STANDARD,
   type UtilityProviderInputs,
 } from "@/lib/propertyBillingCalculations";
 import type { SheetRow } from "@/types/sheet";
@@ -23,8 +24,9 @@ function calcTrueRate(amount: number, consumption: number): number {
 }
 
 /**
- * True rates come from the actual master bill ÷ consumption.
- * Line amounts are that bill allocated across the entered kWh / m³.
+ * If Master Bill is entered → true rate = bill ÷ consumption (cost allocation).
+ * If Master Bill is empty → estimate with selling rates so kWh/m³ inputs
+ * still drive the analytics panel (no more all-zeros until bill is typed).
  */
 function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
   const meralcoTotalConsumption = roundCurrency(
@@ -34,27 +36,26 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
   );
 
   const meralcoMasterBill = roundCurrency(Math.max(0, record.meralcoBillAmount));
-  const meralcoTrueRate = calcTrueRate(
-    meralcoMasterBill,
-    meralcoTotalConsumption,
-  );
+  const meralcoRate =
+    meralcoMasterBill > 0 && meralcoTotalConsumption > 0
+      ? calcTrueRate(meralcoMasterBill, meralcoTotalConsumption)
+      : ELECTRICITY_SELLING_RATE;
 
   const motorElecRate =
     record.electricityMotorRate > 0
       ? record.electricityMotorRate
-      : meralcoTrueRate;
+      : meralcoRate;
 
   const jjcCalculatedAmount = roundCurrency(
-    record.jjcConsumptionKwh * meralcoTrueRate,
+    record.jjcConsumptionKwh * meralcoRate,
   );
   const apartmentCalculatedAmount = roundCurrency(
-    record.apartmentConsumptionKwh * meralcoTrueRate,
+    record.apartmentConsumptionKwh * meralcoRate,
   );
   const motorCalculatedAmount = roundCurrency(
     record.motorConsumptionKwh * motorElecRate,
   );
 
-  // Prefer the entered master bill; fall back to allocated sum if motor uses a custom rate.
   const allocatedMeralco = roundCurrency(
     jjcCalculatedAmount + apartmentCalculatedAmount + motorCalculatedAmount,
   );
@@ -68,16 +69,19 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
   );
 
   const miwdMasterBill = roundCurrency(Math.max(0, record.miwdBillAmount));
-  const miwdTrueRate = calcTrueRate(miwdMasterBill, miwdTotalConsumption);
+  const miwdRate =
+    miwdMasterBill > 0 && miwdTotalConsumption > 0
+      ? calcTrueRate(miwdMasterBill, miwdTotalConsumption)
+      : WATER_RATE_STANDARD;
 
   const waterMotorRate =
-    record.waterMotorRate > 0 ? record.waterMotorRate : miwdTrueRate;
+    record.waterMotorRate > 0 ? record.waterMotorRate : miwdRate;
 
   const miwdResidentialAmount = roundCurrency(
-    record.miwdResidentialM3 * miwdTrueRate,
+    record.miwdResidentialM3 * miwdRate,
   );
   const miwdCommercialAmount = roundCurrency(
-    record.miwdCommercialM3 * miwdTrueRate,
+    record.miwdCommercialM3 * miwdRate,
   );
   const pumpedWaterAmount = roundCurrency(
     record.pumpedWaterChargeM3 * waterMotorRate,
@@ -90,7 +94,7 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
     miwdMasterBill > 0 ? miwdMasterBill : allocatedMiwd;
 
   return {
-    meralcoTrueRate: roundCurrency(meralcoTrueRate),
+    meralcoTrueRate: roundCurrency(meralcoRate),
     meralcoTotalConsumption,
     jjcCalculatedAmount,
     motorCalculatedAmount,
@@ -99,7 +103,7 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
     meralcoBalance: roundCurrency(
       computedMeralcoMasterBill - record.meralcoPaidThisMonth,
     ),
-    miwdTrueRate: roundCurrency(miwdTrueRate),
+    miwdTrueRate: roundCurrency(miwdRate),
     miwdTotalConsumption,
     miwdBalance: roundCurrency(
       computedMiwdMasterBill - record.miwdPaidThisMonth,
@@ -324,13 +328,11 @@ export function useUtilityExpenseAnalytics({
       }, 0),
     );
 
-    // Only use billing-sheet "Paid Tenant Billed" when the form has real
-    // consumption + master bill. Empty kWh with a leftover master bill used to
-    // show a fake ₱6.69 profit from sheet payments alone.
-    const hasElecInputs =
-      derived.meralcoTotalConsumption > 0 && record.meralcoBillAmount > 0;
-    const hasWaterInputs =
-      derived.miwdTotalConsumption > 0 && record.miwdBillAmount > 0;
+    // Drive analytics from form consumption. Master bill is optional — when
+    // empty, deriveRates already falls back to selling rates so the panel
+    // updates as soon as kWh / m³ are entered.
+    const hasElecInputs = derived.meralcoTotalConsumption > 0;
+    const hasWaterInputs = derived.miwdTotalConsumption > 0;
 
     const tenantElectricityTrueCost = hasElecInputs
       ? derived.apartmentCalculatedAmount

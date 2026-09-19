@@ -189,7 +189,12 @@ export function ExpenseForm({
                   onRecordChange({ meralcoBillAmount: value })
                 }
                 highlight
-                placeholder="Enter master bill"
+                placeholder={
+                  derived.computedMeralcoMasterBill > 0 &&
+                  record.meralcoBillAmount <= 0
+                    ? derived.computedMeralcoMasterBill.toFixed(2)
+                    : "Enter master bill"
+                }
               />
               <CurrencyField
                 label="Amount Paid This Month"
@@ -241,7 +246,11 @@ export function ExpenseForm({
                 value={record.miwdBillAmount}
                 onChange={(value) => onRecordChange({ miwdBillAmount: value })}
                 highlight
-                placeholder="Enter master bill"
+                placeholder={
+                  derived.computedMiwdMasterBill > 0 && record.miwdBillAmount <= 0
+                    ? derived.computedMiwdMasterBill.toFixed(2)
+                    : "Enter master bill"
+                }
               />
               <CurrencyField
                 label="Amount Paid This Month"

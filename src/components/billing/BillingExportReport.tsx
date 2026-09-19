@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { FileText, KeyRound } from "lucide-react";
 import {
+  formatPaymentActivityLine,
   formatStatementPeriod,
   summarizeBills,
 } from "@/lib/mapBillingViewModel";
@@ -163,6 +164,33 @@ function BillCard({ bill }: { bill: Bill }) {
         </div>
       </div>
       <UtilityTable bill={bill} />
+      {bill.paymentActivities && bill.paymentActivities.length > 0 ? (
+        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+            Payment Activity
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {bill.paymentActivities.map((activity) => (
+              <li
+                key={activity.id}
+                className="text-sm font-semibold text-emerald-800"
+              >
+                {formatPaymentActivityLine(activity)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : bill.amountPaid > 0 && bill.datePaid ? (
+        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+            Payment Activity
+          </p>
+          <p className="mt-1.5 text-sm font-semibold text-emerald-800">
+            {formatLongDate(bill.datePaid)} · Paid{" "}
+            {formatPesoDecimal(bill.amountPaid)}
+          </p>
+        </div>
+      ) : null}
     </article>
   );
 }

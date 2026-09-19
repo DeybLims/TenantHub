@@ -19,4 +19,13 @@ export interface SheetRow {
   DueDate?: string | null;
   Notes?: string | null;
   Status: string;
+  /** Supabase billing_records.id when available */
+  BillingId?: string;
+  PaymentActivities?: Array<{
+    id: string;
+    paymentDate: string;
+    amount: number;
+    method: string;
+    reference: string;
+  }>;
 }

@@ -80,6 +80,55 @@ export async function fetchSupabaseBillingRows(
     );
   }
 
+  const billingIds = rows
+    .map((row) => row.BillingId)
+    .filter((id): id is string => Boolean(id));
+
+  if (billingIds.length > 0) {
+    const { data: activities, error: activitiesError } = await supabase
+      .from("payment_activities")
+      .select("*")
+      .in("billing_record_id", billingIds)
+      .order("payment_date", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (activitiesError) {
+      // Table may be missing in older deploys — billing still works without history.
+      console.warn("payment_activities fetch:", activitiesError.message);
+    } else if (activities?.length) {
+      const byBillingId = new Map<
+        string,
+        NonNullable<SheetRow["PaymentActivities"]>
+      >();
+
+      for (const activity of activities as Array<{
+        id: string;
+        billing_record_id: string;
+        payment_date: string;
+        amount: number;
+        method: string;
+        reference_notes: string;
+      }>) {
+        const list = byBillingId.get(activity.billing_record_id) ?? [];
+        list.push({
+          id: activity.id,
+          paymentDate: activity.payment_date,
+          amount: Number(activity.amount) || 0,
+          method: activity.method,
+          reference: activity.reference_notes ?? "",
+        });
+        byBillingId.set(activity.billing_record_id, list);
+      }
+
+      rows = rows.map((row) => ({
+        ...row,
+        PaymentActivities: row.BillingId
+          ? (byBillingId.get(row.BillingId) ?? [])
+          : [],
+      }));
+    }
+  }
+
   return rows;
 }
 
@@ -304,6 +353,38 @@ export async function updateSupabaseBill(
     .eq("id", existing.id);
 
   if (error) throw new Error(error.message);
+
+  if (data.paymentActivity && data.paymentActivity.amount > 0) {
+    const method =
+      data.paymentActivity.method === "cash" ||
+      data.paymentActivity.method === "bank" ||
+      data.paymentActivity.method === "online"
+        ? data.paymentActivity.method
+        : "other";
+    const paymentDate =
+      toPgDate(data.paymentActivity.paymentDate) ??
+      datePaid ??
+      new Date().toISOString().slice(0, 10);
+
+    const { error: activityError } = await supabase
+      .from("payment_activities")
+      .insert({
+        billing_record_id: existing.id,
+        payment_date: paymentDate,
+        amount: Number(data.paymentActivity.amount) || 0,
+        method,
+        reference_notes: data.paymentActivity.reference?.trim() ?? "",
+      });
+
+    if (activityError) {
+      console.warn("payment_activities insert:", activityError.message);
+      return {
+        success: true,
+        message:
+          "Billing updated, but payment activity could not be logged. Check payment_activities table.",
+      };
+    }
+  }
 
   return { success: true, message: "Billing record updated." };
 }

@@ -1,5 +1,15 @@
 export type BillPaymentStatus = "Paid" | "Unpaid" | "Partial";
 
+export type BillPaymentMethod = "cash" | "bank" | "online" | "other";
+
+export interface PaymentActivity {
+  id: string;
+  paymentDate: string;
+  amount: number;
+  method: BillPaymentMethod;
+  reference: string;
+}
+
 export interface UtilityReading {
   amount: number;
   previous: number;
@@ -26,6 +36,8 @@ export interface Bill {
   status: BillPaymentStatus;
   datePaid?: string | null;
   notes?: string;
+  /** Individual Pay Balance transactions (date + method + amount + reference). */
+  paymentActivities?: PaymentActivity[];
 }
 
 export interface BillingPeriodSummary {
@@ -104,6 +116,13 @@ export interface UpdateBillPayload {
   dueDate?: string;
   datePaid?: string;
   notes?: string;
+  /** When set, records one payment activity row (timestamp + reference). */
+  paymentActivity?: {
+    amount: number;
+    method: BillPaymentMethod;
+    reference?: string;
+    paymentDate: string;
+  };
 }
 
 export interface BillingDetailSaveData {

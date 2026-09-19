@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isSupabaseConfigured } from "@/lib/dataSource";
 import {
+  billUserNotes,
+  buildPaymentActivityNoteLine,
+} from "@/lib/mapBillingViewModel";
+import {
   generateSupabaseBill,
   updateSupabaseBill,
 } from "@/lib/supabase/repository";
@@ -36,12 +40,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Sheets fallback: encode each payment as a dated activity line in Notes.
+    let sheetsBody = body;
+    if (body.action === "updateBill" && body.data) {
+      const data = body.data as UpdateBillPayload;
+      if (data.paymentActivity && data.paymentActivity.amount > 0) {
+        const activityLine = buildPaymentActivityNoteLine({
+          paymentDate: data.paymentActivity.paymentDate,
+          method: data.paymentActivity.method,
+          amount: data.paymentActivity.amount,
+          reference: data.paymentActivity.reference,
+        });
+        const notes = [billUserNotes(data.notes), activityLine]
+          .filter(Boolean)
+          .join("\n");
+        sheetsBody = {
+          ...body,
+          data: { ...data, notes, paymentActivity: undefined },
+        };
+      }
+    }
+
     const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       cache: "no-store",
       redirect: "follow",
-      body: JSON.stringify(body),
+      body: JSON.stringify(sheetsBody),
     });
 
     const raw = await response.text();

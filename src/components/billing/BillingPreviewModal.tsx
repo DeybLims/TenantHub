@@ -12,12 +12,12 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatLongDate, formatPesoDecimal } from "@/lib/format";
 import {
   billUserNotes,
+  formatPaymentActivityLine,
   formatStatementPeriodCompact,
-  parsePaymentActivityLines,
   summarizeBills,
 } from "@/lib/mapBillingViewModel";
 import { getTenantInitials } from "@/lib/tenantInitials";
-import type { Bill } from "@/types/billing";
+import type { Bill, PaymentActivity } from "@/types/billing";
 
 export interface BillingPreviewModalProps {
   open: boolean;
@@ -61,10 +61,11 @@ function SummaryCard({
   );
 }
 
-function parsePaymentActivities(bill: Bill): string[] {
-  // Only show real payment-activity lines still stored on older bills.
-  // New payments no longer write those lines into Notes (avoids stacking/duplication).
-  return parsePaymentActivityLines(bill.notes);
+function resolvePaymentActivities(bill: Bill): PaymentActivity[] {
+  if (bill.paymentActivities && bill.paymentActivities.length > 0) {
+    return bill.paymentActivities;
+  }
+  return [];
 }
 
 function BillDetailTable({
@@ -74,7 +75,7 @@ function BillDetailTable({
   bill: Bill;
   onPayBalance?: (bill: Bill) => void;
 }) {
-  const paymentActivities = parsePaymentActivities(bill);
+  const paymentActivities = resolvePaymentActivities(bill);
   const userNotes = billUserNotes(bill.notes);
 
   return (
@@ -149,12 +150,12 @@ function BillDetailTable({
             Payment Activity
           </p>
           <ul className="mt-2 space-y-2">
-            {paymentActivities.map((activity, index) => (
+            {paymentActivities.map((activity) => (
               <li
-                key={`${bill.id}-activity-${index}`}
+                key={activity.id}
                 className="text-sm font-semibold text-emerald-800"
               >
-                {activity}
+                {formatPaymentActivityLine(activity)}
               </li>
             ))}
           </ul>

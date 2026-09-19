@@ -324,23 +324,30 @@ export function useUtilityExpenseAnalytics({
       }, 0),
     );
 
-    // Total Tenant Cost follows the form allocation (master bill × share of
-    // consumption) — NOT billing-sheet meter totals × true rate. Multiplying
-    // sheet consumption by a rate from a partial test input (e.g. 1 m³ / ₱45)
-    // produced a huge stuck-looking number (~₱47,925).
-    const tenantElectricityTrueCost = derived.apartmentCalculatedAmount;
-    const hasMeralcoCostBasis = record.meralcoBillAmount > 0;
-    const netElectricityProfit = hasMeralcoCostBasis
-      ? roundCurrency(paidTenantBilled - tenantElectricityTrueCost)
+    // Only use billing-sheet "Paid Tenant Billed" when the form has real
+    // consumption + master bill. Empty kWh with a leftover master bill used to
+    // show a fake ₱6.69 profit from sheet payments alone.
+    const hasElecInputs =
+      derived.meralcoTotalConsumption > 0 && record.meralcoBillAmount > 0;
+    const hasWaterInputs =
+      derived.miwdTotalConsumption > 0 && record.miwdBillAmount > 0;
+
+    const tenantElectricityTrueCost = hasElecInputs
+      ? derived.apartmentCalculatedAmount
+      : 0;
+    const paidElecForAnalytics = hasElecInputs ? paidTenantBilled : 0;
+    const netElectricityProfit = hasElecInputs
+      ? roundCurrency(paidElecForAnalytics - tenantElectricityTrueCost)
       : 0;
 
-    const trueTenantWaterCost = roundCurrency(
-      derived.miwdResidentialAmount + derived.miwdCommercialAmount,
-    );
-    const waterMotorCost = derived.pumpedWaterAmount;
-    const tenantWaterRevenue = paidTenantWaterBilled;
-    const hasMiwdCostBasis = record.miwdBillAmount > 0;
-    const netWaterProfit = hasMiwdCostBasis
+    const trueTenantWaterCost = hasWaterInputs
+      ? roundCurrency(
+          derived.miwdResidentialAmount + derived.miwdCommercialAmount,
+        )
+      : 0;
+    const waterMotorCost = hasWaterInputs ? derived.pumpedWaterAmount : 0;
+    const tenantWaterRevenue = hasWaterInputs ? paidTenantWaterBilled : 0;
+    const netWaterProfit = hasWaterInputs
       ? roundCurrency(tenantWaterRevenue - trueTenantWaterCost - waterMotorCost)
       : 0;
 
@@ -348,7 +355,7 @@ export function useUtilityExpenseAnalytics({
       derived,
       tenantTotalConsumptionKwh: tenantKwh,
       tenantTotalWaterM3: tenantM3,
-      paidTenantBilled,
+      paidTenantBilled: paidElecForAnalytics,
       tenantElectricityTrueCost,
       netElectricityProfit,
       tenantWaterRevenue,

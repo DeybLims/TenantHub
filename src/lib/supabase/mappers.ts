@@ -100,6 +100,7 @@ export function mapTenantRow(row: DbTenantRow): TenantRecord {
 
 export function mapBillingRow(row: DbBillingRow): SheetRow {
   return {
+    BillingId: row.id,
     Month: billingDateToSheetMonth(row.billing_month),
     Room: row.room,
     Rent: row.rent,

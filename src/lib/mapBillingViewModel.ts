@@ -7,8 +7,10 @@ import {
 import { normalizeBillingStatusLabel } from "@/components/tenants/tenantStatusStyles";
 import type {
   Bill,
+  BillPaymentMethod,
   BillPaymentStatus,
   BillingPeriodSummary,
+  PaymentActivity,
 } from "@/types/billing";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
@@ -95,7 +97,80 @@ export function sheetRowToBill(
     status: toPaymentStatus(String(row.Status ?? "")),
     datePaid: row.DatePaid ? String(row.DatePaid) : null,
     notes: row.Notes ? String(row.Notes) : "",
+    paymentActivities: mapSheetPaymentActivities(row),
   };
+}
+
+function mapSheetPaymentActivities(row: SheetRow): PaymentActivity[] {
+  const fromDb = (row.PaymentActivities ?? []).map((activity) => ({
+    id: activity.id,
+    paymentDate: activity.paymentDate,
+    amount: activity.amount,
+    method: toPaymentMethod(activity.method),
+    reference: activity.reference ?? "",
+  }));
+
+  if (fromDb.length > 0) return fromDb;
+
+  // Legacy: payment lines previously stored in Notes.
+  return parseLegacyPaymentActivitiesFromNotes(
+    row.Notes ? String(row.Notes) : "",
+  );
+}
+
+function toPaymentMethod(value: string): BillPaymentMethod {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "cash") return "cash";
+  if (normalized === "bank" || normalized === "bank transfer") return "bank";
+  if (normalized === "online") return "online";
+  return "other";
+}
+
+/** Parse older Notes-embedded payment lines into structured activities. */
+export function parseLegacyPaymentActivitiesFromNotes(
+  notes: string,
+): PaymentActivity[] {
+  if (!notes.trim()) return [];
+
+  return notes
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && isPaymentActivityLine(line))
+    .map((line, index) => {
+      const payMatch = line.match(
+        /^\[PAY\]\s*(\d{4}-\d{2}-\d{2})\s*\|\s*([^|]+)\|\s*₱?\s*([\d,]+(?:\.\d+)?)\s*(?:\|\s*Ref:\s*(.*))?$/i,
+      );
+      if (payMatch) {
+        return {
+          id: `legacy-${index}`,
+          paymentDate: payMatch[1],
+          method: toPaymentMethod(payMatch[2]),
+          amount: Number(payMatch[3].replace(/,/g, "")) || 0,
+          reference: (payMatch[4] ?? "").trim(),
+        };
+      }
+
+      const classicMatch = line.match(
+        /^(CASH|BANK TRANSFER|ONLINE|PAYMENT)\s*-\s*₱?\s*([\d,]+(?:\.\d+)?)(?:\s*Reference\/Notes:\s*(.*))?$/i,
+      );
+      if (classicMatch) {
+        return {
+          id: `legacy-${index}`,
+          paymentDate: "",
+          method: toPaymentMethod(classicMatch[1]),
+          amount: Number(classicMatch[2].replace(/,/g, "")) || 0,
+          reference: (classicMatch[3] ?? "").trim(),
+        };
+      }
+
+      return {
+        id: `legacy-${index}`,
+        paymentDate: "",
+        method: "other" as const,
+        amount: 0,
+        reference: line,
+      };
+    });
 }
 
 export function buildBillsForRoom(
@@ -191,7 +266,11 @@ export function formatBillDateBlock(dateValue: string): {
 }
 
 export function isPaymentActivityLine(line: string): boolean {
-  return /^(CASH|BANK TRANSFER|ONLINE|PAYMENT)/i.test(line.trim());
+  const trimmed = line.trim();
+  return (
+    /^\[PAY\]/i.test(trimmed) ||
+    /^(CASH|BANK TRANSFER|ONLINE|PAYMENT)/i.test(trimmed)
+  );
 }
 
 /** Payment lines stored in Notes (from Pay Balance). */
@@ -211,4 +290,55 @@ export function billUserNotes(notes?: string): string {
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !isPaymentActivityLine(line))
     .join("\n");
+}
+
+export function formatPaymentMethodLabel(method: BillPaymentMethod | string): string {
+  switch (String(method).toLowerCase()) {
+    case "cash":
+      return "CASH";
+    case "bank":
+    case "bank transfer":
+      return "BANK TRANSFER";
+    case "online":
+      return "ONLINE";
+    default:
+      return "PAYMENT";
+  }
+}
+
+/** One display line: date · method - amount · Ref: … */
+export function formatPaymentActivityLine(activity: PaymentActivity): string {
+  const parts: string[] = [];
+  if (activity.paymentDate) {
+    const date = new Date(activity.paymentDate);
+    parts.push(
+      Number.isNaN(date.getTime())
+        ? activity.paymentDate
+        : date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          }),
+    );
+  }
+  parts.push(
+    `${formatPaymentMethodLabel(activity.method)} - ₱${activity.amount.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+  );
+  if (activity.reference.trim()) {
+    parts.push(`Ref: ${activity.reference.trim()}`);
+  }
+  return parts.join(" · ");
+}
+
+/** Sheets / legacy fallback line stored in Notes when payment_activities is unavailable. */
+export function buildPaymentActivityNoteLine(activity: {
+  paymentDate: string;
+  method: string;
+  amount: number;
+  reference?: string;
+}): string {
+  const ref = activity.reference?.trim()
+    ? ` | Ref: ${activity.reference.trim()}`
+    : "";
+  return `[PAY] ${activity.paymentDate} | ${formatPaymentMethodLabel(activity.method)} | ₱${activity.amount.toFixed(2)}${ref}`;
 }

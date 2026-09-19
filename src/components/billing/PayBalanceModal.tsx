@@ -46,6 +46,8 @@ export interface PayBalanceModalProps {
 const inputClass =
   "w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-navy focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
 
+const dateInputClass = `${inputClass} [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none`;
+
 const paymentMethods: Array<{
   id: PaymentMethod;
   label: string;
@@ -82,16 +84,12 @@ function deriveStatus(totalDue: number, paid: number): string {
 function buildPaymentPayload(
   bill: Bill,
   paymentAmount: number,
-  _method: PaymentMethod,
+  method: PaymentMethod,
   reference: string,
   paymentDate: string,
 ): UpdateBillPayload {
   const newPaid = bill.amountPaid + paymentAmount;
-  // User notes only — never stack CASH/BANK/ONLINE payment lines into Notes.
-  // Optional reference from Pay Balance is stored as a normal note if provided.
-  const notes = [billUserNotes(bill.notes), reference.trim()]
-    .filter(Boolean)
-    .join("\n");
+  const isoDate = toOptionalIsoDate(paymentDate);
 
   return {
     month: bill.billingMonth,
@@ -118,8 +116,15 @@ function buildPaymentPayload(
     status: deriveStatus(bill.totalDue, newPaid),
     billingDate: toOptionalIsoDate(bill.billingDate),
     dueDate: toOptionalIsoDate(bill.dueDate),
-    datePaid: toOptionalIsoDate(paymentDate),
-    notes: notes || undefined,
+    datePaid: isoDate,
+    // Keep existing user notes only — reference belongs on the payment activity.
+    notes: billUserNotes(bill.notes) || undefined,
+    paymentActivity: {
+      amount: paymentAmount,
+      method,
+      reference: reference.trim(),
+      paymentDate: isoDate || paymentDate,
+    },
   };
 }
 
@@ -266,7 +271,7 @@ export function PayBalanceModal({
               type="date"
               value={paymentDate}
               onChange={(event) => setPaymentDate(event.target.value)}
-              className={inputClass}
+              className={dateInputClass}
               required
             />
           </div>
@@ -342,13 +347,13 @@ export function PayBalanceModal({
 
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">
-              Reference / Notes (Optional)
+              Reference (Optional)
             </label>
             <input
               type="text"
               value={reference}
               onChange={(event) => setReference(event.target.value)}
-              placeholder="Enter reference number or notes (e.g. transaction ID)"
+              placeholder="Transaction ID / reference number"
               className={inputClass}
             />
           </div>

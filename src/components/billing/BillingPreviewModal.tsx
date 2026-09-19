@@ -11,7 +11,6 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatLongDate, formatPesoDecimal } from "@/lib/format";
 import {
-  billUserNotes,
   formatPaymentActivityLine,
   formatStatementPeriodCompact,
   summarizeBills,
@@ -76,7 +75,6 @@ function BillDetailTable({
   onPayBalance?: (bill: Bill) => void;
 }) {
   const paymentActivities = resolvePaymentActivities(bill);
-  const userNotes = billUserNotes(bill.notes);
 
   return (
     <div className="space-y-3 bg-blue-50/40 px-4 py-4">
@@ -181,20 +179,6 @@ function BillDetailTable({
           )}
         </div>
       )}
-
-      {userNotes ? (
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Notes
-          </label>
-          <textarea
-            readOnly
-            rows={2}
-            value={userNotes}
-            className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-navy"
-          />
-        </div>
-      ) : null}
     </div>
   );
 }

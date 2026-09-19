@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { FileText, KeyRound } from "lucide-react";
 import {
-  billUserNotes,
   formatStatementPeriod,
   summarizeBills,
 } from "@/lib/mapBillingViewModel";
@@ -117,17 +116,6 @@ function UtilityTable({ bill }: { bill: Bill }) {
             </td>
           </tr>
         ))}
-        {billUserNotes(bill.notes) ? (
-          <tr>
-            <td
-              colSpan={4}
-              className="border border-gray-200 bg-slate-50 px-3 py-2 text-sm text-gray-600"
-            >
-              <span className="font-medium text-gray-500">Notes: </span>
-              {billUserNotes(bill.notes)}
-            </td>
-          </tr>
-        ) : null}
       </tbody>
     </table>
   );

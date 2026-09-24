@@ -25,8 +25,7 @@ import type { SheetRow } from "@/types/sheet";
 
 export interface TenantDetailsProps {
   tenant: TenantTableRow;
-  billing: SheetRow | undefined;
-  selectedMonth: string;
+  billingRows: SheetRow[];
   onSave?: (data: TenantFormData) => void;
   onCancel?: () => void;
   onDelete?: () => void;
@@ -117,8 +116,7 @@ function SummaryCard({
 
 export function TenantDetails({
   tenant,
-  billing,
-  selectedMonth,
+  billingRows,
   onSave,
   onCancel,
   onDelete,
@@ -160,8 +158,8 @@ export function TenantDetails({
   }, [tenant]);
 
   const billingSummary = useMemo(
-    () => buildTenantBillingSummary(billing, selectedMonth),
-    [billing, selectedMonth],
+    () => buildTenantBillingSummary(billingRows, tenant.Room, tenant),
+    [billingRows, tenant],
   );
 
   const savedForm = useMemo(

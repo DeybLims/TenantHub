@@ -1,4 +1,4 @@
-import { billingMonthKey, formatMonthLabel } from "@/lib/months";
+import { billingMonthKey, billingMonthToDateInput, formatMonthLabel } from "@/lib/months";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import {
   ELECTRICITY_SELLING_RATE,
@@ -198,6 +198,21 @@ export function buildBillsForRoom(
       (a, b) =>
         new Date(b.billingMonth).getTime() - new Date(a.billingMonth).getTime(),
     );
+}
+
+/**
+ * Earliest billing month key (YYYY-MM) that belongs to the current occupant.
+ * Prefers Move-in, then Lease Start — so prior-occupant bills stay hidden.
+ */
+export function tenantOccupancyFromDate(
+  tenant: TenantRecord | undefined,
+): string {
+  if (!tenant) return "";
+  return (
+    billingMonthToDateInput(tenant.MoveIn) ||
+    billingMonthToDateInput(tenant.LeaseStart) ||
+    ""
+  );
 }
 
 export function summarizeBills(bills: Bill[]): BillingPeriodSummary {

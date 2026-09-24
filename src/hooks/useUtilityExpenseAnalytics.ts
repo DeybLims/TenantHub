@@ -15,6 +15,10 @@ import {
   WATER_RATE_STANDARD,
   type UtilityProviderInputs,
 } from "@/lib/propertyBillingCalculations";
+import {
+  allocatePaymentToUtilityBills,
+  isBillingFullyPaid,
+} from "@/lib/paymentAllocation";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
 
@@ -24,22 +28,27 @@ function calcTrueRate(amount: number, consumption: number): number {
 }
 
 /**
- * If Master Bill is entered → true rate = bill ÷ consumption (cost allocation).
- * If Master Bill is empty → estimate with selling rates so kWh/m³ inputs
- * still drive the analytics panel (no more all-zeros until bill is typed).
+ * Rate priority: explicit charge rate → master bill ÷ consumption → selling default.
+ * Total consumption: explicit total field, else sum of parts.
  */
 function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
-  const meralcoTotalConsumption = roundCurrency(
+  const partsSum = roundCurrency(
     record.jjcConsumptionKwh +
       record.apartmentConsumptionKwh +
       record.motorConsumptionKwh,
   );
+  const meralcoTotalConsumption =
+    record.meralcoTotalConsumptionKwh > 0
+      ? roundCurrency(record.meralcoTotalConsumptionKwh)
+      : partsSum;
 
   const meralcoMasterBill = roundCurrency(Math.max(0, record.meralcoBillAmount));
   const meralcoRate =
-    meralcoMasterBill > 0 && meralcoTotalConsumption > 0
-      ? calcTrueRate(meralcoMasterBill, meralcoTotalConsumption)
-      : ELECTRICITY_SELLING_RATE;
+    record.electricityChargeRate > 0
+      ? record.electricityChargeRate
+      : meralcoMasterBill > 0 && meralcoTotalConsumption > 0
+        ? calcTrueRate(meralcoMasterBill, meralcoTotalConsumption)
+        : ELECTRICITY_SELLING_RATE;
 
   const motorElecRate =
     record.electricityMotorRate > 0
@@ -62,17 +71,23 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
   const computedMeralcoMasterBill =
     meralcoMasterBill > 0 ? meralcoMasterBill : allocatedMeralco;
 
-  const miwdTotalConsumption = roundCurrency(
+  const waterPartsSum = roundCurrency(
     record.miwdResidentialM3 +
       record.miwdCommercialM3 +
       record.pumpedWaterChargeM3,
   );
+  const miwdTotalConsumption =
+    record.miwdTotalConsumptionM3 > 0
+      ? roundCurrency(record.miwdTotalConsumptionM3)
+      : waterPartsSum;
 
   const miwdMasterBill = roundCurrency(Math.max(0, record.miwdBillAmount));
   const miwdRate =
-    miwdMasterBill > 0 && miwdTotalConsumption > 0
-      ? calcTrueRate(miwdMasterBill, miwdTotalConsumption)
-      : WATER_RATE_STANDARD;
+    record.waterChargeRate > 0
+      ? record.waterChargeRate
+      : miwdMasterBill > 0 && miwdTotalConsumption > 0
+        ? calcTrueRate(miwdMasterBill, miwdTotalConsumption)
+        : WATER_RATE_STANDARD;
 
   const waterMotorRate =
     record.waterMotorRate > 0 ? record.waterMotorRate : miwdRate;
@@ -179,13 +194,25 @@ function migrateLegacyRecord(
   const pumpedWaterChargeM3 =
     Number(parsed.pumpedWaterChargeM3 ?? parsed.miwdConsumption) || 0;
 
+  const apartmentConsumptionKwh =
+    Number(parsed.apartmentConsumptionKwh ?? parsed.meralcoConsumption) || 0;
+  const motorConsumptionKwh =
+    Number(parsed.motorConsumptionKwh ?? parsed.aptMotorConsumption) || 0;
+  const partsElecTotal = roundCurrency(
+    jjcConsumptionKwh + apartmentConsumptionKwh + motorConsumptionKwh,
+  );
+  const waterPartsTotal = roundCurrency(
+    miwdResidentialM3 + miwdCommercialM3 + pumpedWaterChargeM3,
+  );
+
   return {
     ...base,
+    meralcoTotalConsumptionKwh:
+      Number(parsed.meralcoTotalConsumptionKwh) || partsElecTotal,
+    electricityChargeRate: Number(parsed.electricityChargeRate) || 0,
     jjcConsumptionKwh,
-    apartmentConsumptionKwh:
-      Number(parsed.apartmentConsumptionKwh ?? parsed.meralcoConsumption) || 0,
-    motorConsumptionKwh:
-      Number(parsed.motorConsumptionKwh ?? parsed.aptMotorConsumption) || 0,
+    apartmentConsumptionKwh,
+    motorConsumptionKwh,
     electricityMotorRate:
       Number(parsed.electricityMotorRate ?? parsed.motorRate) || 0,
     meralcoBillAmount:
@@ -196,6 +223,9 @@ function migrateLegacyRecord(
           parsed.paidToUtilityAmount ??
           parsed.clientPaidAmount,
       ) || 0,
+    miwdTotalConsumptionM3:
+      Number(parsed.miwdTotalConsumptionM3) || waterPartsTotal,
+    waterChargeRate: Number(parsed.waterChargeRate) || 0,
     miwdResidentialM3,
     miwdCommercialM3,
     pumpedWaterChargeM3,
@@ -230,15 +260,20 @@ function saveExpenseRecord(month: string, record: ExpenseRecord): void {
   localStorage.setItem(expenseRecordStorageKey(month), JSON.stringify(record));
 }
 
-function allocatedUtilityPaid(row: SheetRow, bill: number): number {
-  const due = Number(row.TotalDue ?? row.Total ?? 0);
+function allocatedUtilityPaid(
+  row: SheetRow,
+  utility: "electricity" | "water",
+): number {
   const paid = Number(row.Paid ?? 0);
-  if (due <= 0 || bill <= 0) return 0;
-  if (row.Status === "Paid") return bill;
-  if (row.Status === "Partial") {
-    return Math.min(bill, (paid / due) * bill);
-  }
-  return 0;
+  const due = Number(row.TotalDue ?? row.Total ?? 0);
+  const elecBill = Number(row.ElecBill ?? 0);
+  const waterBill = Number(row.WaterBill ?? 0);
+  if (paid <= 0 && row.Status !== "Paid") return 0;
+
+  const allocated = allocatePaymentToUtilityBills(paid, elecBill, waterBill, {
+    fullyPaid: isBillingFullyPaid(row.Status, paid, due),
+  });
+  return utility === "electricity" ? allocated.electricity : allocated.water;
 }
 
 function roomPaymentStatus(amountPaid: number, grandTotal: number): string {
@@ -304,8 +339,10 @@ export function useUtilityExpenseAnalytics({
               TotalDue: room.grandTotal,
               Paid: room.amountPaid,
               Status: status,
+              ElecBill: room.elecBill,
+              WaterBill: room.waterBill,
             } as SheetRow,
-            room.elecBill,
+            "electricity",
           )
         );
       }, 0),
@@ -321,8 +358,10 @@ export function useUtilityExpenseAnalytics({
               TotalDue: room.grandTotal,
               Paid: room.amountPaid,
               Status: status,
+              ElecBill: room.elecBill,
+              WaterBill: room.waterBill,
             } as SheetRow,
-            room.waterBill,
+            "water",
           )
         );
       }, 0),

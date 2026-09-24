@@ -19,6 +19,7 @@ import {
 import {
   buildBillsForRoom,
   summarizeBills,
+  tenantOccupancyFromDate,
 } from "@/lib/mapBillingViewModel";
 import {
   billingMonthKey,
@@ -147,11 +148,18 @@ export function BillingPage() {
     [filteredRows],
   );
 
-  // Statement modal always uses the tenant's overall bills (all months),
-  // so users don't need to tweak the page From/To just to view a full statement.
+  // Statement modal: bills for this room since the current tenant's move-in
+  // (prior occupant history must not appear under the new tenant).
   const tenantBills = useMemo(() => {
     if (!selectedRow) return [];
-    return buildBillsForRoom(billingRows, tenants, selectedRow.room);
+    const tenant = tenants.find((item) => item.Room === selectedRow.room);
+    const occupancyFrom = tenantOccupancyFromDate(tenant);
+    return buildBillsForRoom(
+      billingRows,
+      tenants,
+      selectedRow.room,
+      occupancyFrom || undefined,
+    );
   }, [billingRows, tenants, selectedRow]);
 
   const statementRange = useMemo(() => {
@@ -174,10 +182,39 @@ export function BillingPage() {
     const roomNumber = Number(focusRoom);
     if (!Number.isFinite(roomNumber)) return;
 
-    const roomSheetRows = billingRows.filter(
-      (row) => Number(row.Room) === roomNumber,
-    );
-    if (!roomSheetRows.length) return;
+    const tenant = tenants.find((item) => item.Room === roomNumber);
+    const occupancyFrom = tenantOccupancyFromDate(tenant);
+    const roomSheetRows = billingRows.filter((row) => {
+      if (Number(row.Room) !== roomNumber) return false;
+      if (!occupancyFrom) return true;
+      const rowKey = billingMonthKey(String(row.Month));
+      const fromKey = billingMonthKey(occupancyFrom);
+      return !rowKey || !fromKey || rowKey >= fromKey;
+    });
+    if (!roomSheetRows.length) {
+      focusedRoomOpened.current = focusRoom;
+      const emptyTenant = tenants.find((item) => item.Room === roomNumber);
+      setSelectedRow({
+        room: roomNumber,
+        unitCode: emptyTenant?.UnitCode ?? "—",
+        tenantName: emptyTenant?.Name ?? "—",
+        month: billingAnchorMonth || "",
+        totalDue: 0,
+        paid: 0,
+        balance: 0,
+        status: "Unpaid",
+        rent: emptyTenant?.Rent ?? 0,
+        elecBill: 0,
+        elecPrev: 0,
+        elecCurr: 0,
+        waterBill: 0,
+        waterPrev: 0,
+        waterCurr: 0,
+        otherCharges: 0,
+      });
+      setIsPreviewOpen(true);
+      return;
+    }
 
     const months = sortMonths([
       ...new Set(billingRows.map((row) => String(row.Month)).filter(Boolean)),
@@ -187,15 +224,12 @@ export function BillingPage() {
 
     focusedRoomOpened.current = focusRoom;
 
-    const matchInTable = filteredRows.find((row) => row.room === roomNumber);
-    if (matchInTable) {
-      setSelectedRow(matchInTable);
-      setIsPreviewOpen(true);
-      return;
-    }
-
-    const tenant = tenants.find((item) => item.Room === roomNumber);
-    const bills = buildBillsForRoom(billingRows, tenants, roomNumber);
+    const bills = buildBillsForRoom(
+      billingRows,
+      tenants,
+      roomNumber,
+      occupancyFrom || undefined,
+    );
     const totalDue = bills.reduce((sum, bill) => sum + bill.totalDue, 0);
     const paid = bills.reduce((sum, bill) => sum + bill.amountPaid, 0);
     const balance = Math.max(0, totalDue - paid);
@@ -241,13 +275,7 @@ export function BillingPage() {
         latestBill?.otherCharges ?? readSheetNumber(latestSheet?.Adjustment),
     });
     setIsPreviewOpen(true);
-  }, [
-    focusRoom,
-    billingRows,
-    tenants,
-    filteredRows,
-    billingAnchorMonth,
-  ]);
+  }, [focusRoom, billingRows, tenants, billingAnchorMonth]);
 
   const handleBillGenerated = () => {
     void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });

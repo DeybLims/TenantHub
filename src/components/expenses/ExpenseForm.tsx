@@ -10,6 +10,12 @@ import type {
   ExpenseRecord,
   UtilityExpenseDerived,
 } from "@/components/expenses/types";
+import {
+  allocateRemainingConsumption,
+  consumptionMismatch,
+  type ConsumptionTouched,
+} from "@/lib/utilityConsumptionAllocation";
+import { roundCurrency } from "@/lib/propertyBillingCalculations";
 
 interface ExpenseFormProps {
   record: ExpenseRecord;
@@ -22,6 +28,8 @@ interface ExpenseFormProps {
 }
 
 const inputClass = `${floatingInputClass} text-navy`;
+
+const EMPTY_TOUCHED: ConsumptionTouched = { a: false, b: false, c: false };
 
 function SectionTitle({ children }: { children: string }) {
   return (
@@ -36,11 +44,15 @@ function NumberField({
   value,
   onChange,
   unit,
+  placeholder = "Enter Value",
+  hint,
 }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
   unit?: string;
+  placeholder?: string;
+  hint?: string;
 }) {
   return (
     <FloatingLabelField label={label}>
@@ -50,7 +62,7 @@ function NumberField({
           min={0}
           step="any"
           value={value || ""}
-          placeholder="Enter Value"
+          placeholder={placeholder}
           onChange={(event) => onChange(Number(event.target.value) || 0)}
           className={`${inputClass} ${unit ? "pr-14" : ""}`}
         />
@@ -60,6 +72,9 @@ function NumberField({
           </span>
         )}
       </div>
+      {hint ? (
+        <p className="mt-1 text-[11px] text-gray-400">{hint}</p>
+      ) : null}
     </FloatingLabelField>
   );
 }
@@ -100,6 +115,11 @@ function CurrencyField({
   );
 }
 
+function formatRatePreview(rate: number, unit: string): string {
+  if (rate <= 0) return "";
+  return `Current rate: ₱${rate.toFixed(2)}/${unit}`;
+}
+
 export function ExpenseForm({
   record,
   derived,
@@ -110,6 +130,10 @@ export function ExpenseForm({
   isDirty = false,
 }: ExpenseFormProps) {
   const [showSavedToast, setShowSavedToast] = useState(false);
+  const [elecTouched, setElecTouched] =
+    useState<ConsumptionTouched>(EMPTY_TOUCHED);
+  const [waterTouched, setWaterTouched] =
+    useState<ConsumptionTouched>(EMPTY_TOUCHED);
 
   useEffect(() => {
     if (isDirty) setShowSavedToast(false);
@@ -121,10 +145,155 @@ export function ExpenseForm({
     return () => window.clearTimeout(timer);
   }, [showSavedToast]);
 
+  // Reset touch tracking when the billing month (loaded record) changes.
+  useEffect(() => {
+    setElecTouched({
+      a: record.jjcConsumptionKwh > 0,
+      b: record.apartmentConsumptionKwh > 0,
+      c: record.motorConsumptionKwh > 0,
+    });
+    setWaterTouched({
+      a: record.miwdResidentialM3 > 0,
+      b: record.miwdCommercialM3 > 0,
+      c: record.pumpedWaterChargeM3 > 0,
+    });
+    // Only re-seed when month identity changes, not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record.billingMonth]);
+
   const handleSave = () => {
     onSave();
     setShowSavedToast(true);
   };
+
+  const applyElecParts = (
+    total: number,
+    parts: { a: number; b: number; c: number },
+    touched: ConsumptionTouched,
+  ) => {
+    const allocated =
+      total > 0
+        ? allocateRemainingConsumption(total, parts, touched)
+        : parts;
+    onRecordChange({
+      meralcoTotalConsumptionKwh: total,
+      jjcConsumptionKwh: allocated.a,
+      apartmentConsumptionKwh: allocated.b,
+      motorConsumptionKwh: allocated.c,
+    });
+  };
+
+  const applyWaterParts = (
+    total: number,
+    parts: { a: number; b: number; c: number },
+    touched: ConsumptionTouched,
+  ) => {
+    const allocated =
+      total > 0
+        ? allocateRemainingConsumption(total, parts, touched)
+        : parts;
+    onRecordChange({
+      miwdTotalConsumptionM3: total,
+      miwdResidentialM3: allocated.a,
+      miwdCommercialM3: allocated.b,
+      pumpedWaterChargeM3: allocated.c,
+    });
+  };
+
+  const handleElecTotalChange = (total: number) => {
+    applyElecParts(
+      total,
+      {
+        a: record.jjcConsumptionKwh,
+        b: record.apartmentConsumptionKwh,
+        c: record.motorConsumptionKwh,
+      },
+      elecTouched,
+    );
+  };
+
+  const handleElecPartChange = (
+    key: keyof ConsumptionTouched,
+    value: number,
+  ) => {
+    const nextTouched: ConsumptionTouched = {
+      ...elecTouched,
+      // Clearing a field releases it back to auto-allocation.
+      [key]: value > 0,
+    };
+    setElecTouched(nextTouched);
+    applyElecParts(
+      record.meralcoTotalConsumptionKwh,
+      {
+        a: key === "a" ? value : record.jjcConsumptionKwh,
+        b: key === "b" ? value : record.apartmentConsumptionKwh,
+        c: key === "c" ? value : record.motorConsumptionKwh,
+      },
+      nextTouched,
+    );
+  };
+
+  const handleWaterTotalChange = (total: number) => {
+    applyWaterParts(
+      total,
+      {
+        a: record.miwdResidentialM3,
+        b: record.miwdCommercialM3,
+        c: record.pumpedWaterChargeM3,
+      },
+      waterTouched,
+    );
+  };
+
+  const handleWaterPartChange = (
+    key: keyof ConsumptionTouched,
+    value: number,
+  ) => {
+    const nextTouched: ConsumptionTouched = {
+      ...waterTouched,
+      [key]: value > 0,
+    };
+    setWaterTouched(nextTouched);
+    applyWaterParts(
+      record.miwdTotalConsumptionM3,
+      {
+        a: key === "a" ? value : record.miwdResidentialM3,
+        b: key === "b" ? value : record.miwdCommercialM3,
+        c: key === "c" ? value : record.pumpedWaterChargeM3,
+      },
+      nextTouched,
+    );
+  };
+
+  const elecPartsSum = roundCurrency(
+    record.jjcConsumptionKwh +
+      record.apartmentConsumptionKwh +
+      record.motorConsumptionKwh,
+  );
+  const elecMismatch =
+    record.meralcoTotalConsumptionKwh > 0
+      ? consumptionMismatch(record.meralcoTotalConsumptionKwh, {
+          a: record.jjcConsumptionKwh,
+          b: record.apartmentConsumptionKwh,
+          c: record.motorConsumptionKwh,
+        })
+      : 0;
+
+  const waterMismatch =
+    record.miwdTotalConsumptionM3 > 0
+      ? consumptionMismatch(record.miwdTotalConsumptionM3, {
+          a: record.miwdResidentialM3,
+          b: record.miwdCommercialM3,
+          c: record.pumpedWaterChargeM3,
+        })
+      : 0;
+
+  const elecRatePreview =
+    record.electricityChargeRate > 0
+      ? record.electricityChargeRate
+      : derived.meralcoTrueRate;
+  const waterRatePreview =
+    record.waterChargeRate > 0 ? record.waterChargeRate : derived.miwdTrueRate;
 
   return (
     <article className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -159,27 +328,55 @@ export function ExpenseForm({
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:gap-8">
             <div className="space-y-4">
               <NumberField
+                label="Electricity Consumption"
+                value={record.meralcoTotalConsumptionKwh}
+                onChange={handleElecTotalChange}
+                unit="kWh"
+                hint={
+                  elecPartsSum > 0
+                    ? `JJC + Tenant + Motor = ${elecPartsSum.toFixed(2)} kWh`
+                    : undefined
+                }
+              />
+              <NumberField
+                label="Electricity Charge Rate"
+                value={record.electricityChargeRate}
+                onChange={(value) =>
+                  onRecordChange({ electricityChargeRate: value })
+                }
+                unit="₱/kWh"
+                placeholder={
+                  elecRatePreview > 0
+                    ? elecRatePreview.toFixed(2)
+                    : "Enter Value"
+                }
+                hint={formatRatePreview(elecRatePreview, "kWh")}
+              />
+              <NumberField
                 label="JJC Consumption"
                 value={record.jjcConsumptionKwh}
-                onChange={(value) => onRecordChange({ jjcConsumptionKwh: value })}
+                onChange={(value) => handleElecPartChange("a", value)}
                 unit="kWh"
               />
               <NumberField
-                label="Apartment Consumption"
+                label="Tenant Consumption"
                 value={record.apartmentConsumptionKwh}
-                onChange={(value) =>
-                  onRecordChange({ apartmentConsumptionKwh: value })
-                }
+                onChange={(value) => handleElecPartChange("b", value)}
                 unit="kWh"
               />
               <NumberField
-                label="Motor Power Usage"
+                label="Motor Consumption"
                 value={record.motorConsumptionKwh}
-                onChange={(value) =>
-                  onRecordChange({ motorConsumptionKwh: value })
-                }
+                onChange={(value) => handleElecPartChange("c", value)}
                 unit="kWh"
               />
+              {Math.abs(elecMismatch) > 0.01 && (
+                <p className="text-xs font-medium text-amber-600">
+                  Parts differ from total by {elecMismatch > 0 ? "+" : ""}
+                  {elecMismatch.toFixed(2)} kWh. Clear a part to auto-fill the
+                  remainder.
+                </p>
+              )}
             </div>
             <div className="space-y-4 border-t border-gray-200 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
               <CurrencyField
@@ -220,25 +417,60 @@ export function ExpenseForm({
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:gap-8">
             <div className="space-y-4">
               <NumberField
+                label="Water Consumption"
+                value={record.miwdTotalConsumptionM3}
+                onChange={handleWaterTotalChange}
+                unit="m³"
+                hint={
+                  record.miwdResidentialM3 +
+                    record.miwdCommercialM3 +
+                    record.pumpedWaterChargeM3 >
+                  0
+                    ? `Residential + Commercial + Pumped = ${roundCurrency(
+                        record.miwdResidentialM3 +
+                          record.miwdCommercialM3 +
+                          record.pumpedWaterChargeM3,
+                      ).toFixed(2)} m³`
+                    : undefined
+                }
+              />
+              <NumberField
+                label="Water Charge Rate"
+                value={record.waterChargeRate}
+                onChange={(value) => onRecordChange({ waterChargeRate: value })}
+                unit="₱/m³"
+                placeholder={
+                  waterRatePreview > 0
+                    ? waterRatePreview.toFixed(2)
+                    : "Enter Value"
+                }
+                hint={formatRatePreview(waterRatePreview, "m³")}
+              />
+              <NumberField
                 label="Residential Base"
                 value={record.miwdResidentialM3}
-                onChange={(value) => onRecordChange({ miwdResidentialM3: value })}
+                onChange={(value) => handleWaterPartChange("a", value)}
                 unit="m³"
               />
               <NumberField
                 label="Commercial Base"
                 value={record.miwdCommercialM3}
-                onChange={(value) => onRecordChange({ miwdCommercialM3: value })}
+                onChange={(value) => handleWaterPartChange("b", value)}
                 unit="m³"
               />
               <NumberField
                 label="Pumped Water Charge"
                 value={record.pumpedWaterChargeM3}
-                onChange={(value) =>
-                  onRecordChange({ pumpedWaterChargeM3: value })
-                }
+                onChange={(value) => handleWaterPartChange("c", value)}
                 unit="m³"
               />
+              {Math.abs(waterMismatch) > 0.01 && (
+                <p className="text-xs font-medium text-amber-600">
+                  Parts differ from total by {waterMismatch > 0 ? "+" : ""}
+                  {waterMismatch.toFixed(2)} m³. Clear a part to auto-fill the
+                  remainder.
+                </p>
+              )}
             </div>
             <div className="space-y-4 border-t border-gray-200 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
               <CurrencyField
@@ -255,7 +487,9 @@ export function ExpenseForm({
               <CurrencyField
                 label="Amount Paid This Month"
                 value={record.miwdPaidThisMonth}
-                onChange={(value) => onRecordChange({ miwdPaidThisMonth: value })}
+                onChange={(value) =>
+                  onRecordChange({ miwdPaidThisMonth: value })
+                }
                 highlight
                 placeholder="0.00"
               />

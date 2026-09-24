@@ -11,7 +11,6 @@ import { TenantsTable } from "@/components/tenants/TenantsTable";
 import type { TenantFormData } from "@/components/tenants/types";
 import { AppShell } from "@/components/layout/AppShell";
 import {
-  findTenantBillingRow,
   getDefaultBillingMonth,
   joinTenantsWithBilling,
   type TenantTableRow,
@@ -88,16 +87,14 @@ export function TenantsPage() {
     );
   }, [activeTenants, selectedTenant]);
 
-  const selectedBilling = useMemo(() => {
-    if (!selectedTenantRow || !billingRows || !selectedMonth) {
-      return undefined;
-    }
-    return findTenantBillingRow(
+  const selectedBillingSummary = useMemo(() => {
+    if (!selectedTenantRow) return null;
+    return buildTenantBillingSummary(
       billingRows,
       selectedTenantRow.Room,
-      selectedMonth,
+      selectedTenantRow,
     );
-  }, [selectedTenantRow, billingRows, selectedMonth]);
+  }, [selectedTenantRow, billingRows]);
 
   useEffect(() => {
     if (
@@ -121,6 +118,8 @@ export function TenantsPage() {
     mutationFn: updateTenantProfile,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 
@@ -129,6 +128,8 @@ export function TenantsPage() {
     onSuccess: () => {
       setSelectedTenant(null);
       void queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 
@@ -165,12 +166,11 @@ export function TenantsPage() {
   };
 
   const handleExportPdf = () => {
-    if (!selectedTenantRow) return;
-    const billingSummary = buildTenantBillingSummary(
-      selectedBilling,
-      selectedMonth,
+    if (!selectedTenantRow || !selectedBillingSummary) return;
+    const tenantView = mapTenantViewModel(
+      selectedTenantRow,
+      selectedBillingSummary,
     );
-    const tenantView = mapTenantViewModel(selectedTenantRow, billingSummary);
     printTenantReport(tenantView);
   };
 
@@ -228,8 +228,7 @@ export function TenantsPage() {
             {selectedTenantRow ? (
               <TenantDetails
                 tenant={selectedTenantRow}
-                billing={selectedBilling}
-                selectedMonth={selectedMonth}
+                billingRows={billingRows}
                 onSave={handleSaveTenant}
                 onDelete={handleDeleteTenant}
                 isSaving={saveTenantMutation.isPending}
@@ -260,6 +259,8 @@ export function TenantsPage() {
         onClose={() => setIsModalOpen(false)}
         onSuccess={() => {
           void queryClient.invalidateQueries({ queryKey: ["tenants"] });
+          void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
+          void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
         }}
       />
     </AppShell>

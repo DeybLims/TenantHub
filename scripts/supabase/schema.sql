@@ -146,7 +146,7 @@ alter table public.billing_records enable row level security;
 create table if not exists public.payment_activities (
   id uuid primary key default gen_random_uuid(),
   billing_record_id uuid not null
-    references public.billing_records (id) on delete restrict,
+    references public.billing_records (id) on delete cascade,
   payment_date date not null default current_date,
   amount numeric(12, 2) not null check (amount > 0),
   method payment_method not null default 'bank',

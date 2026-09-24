@@ -154,6 +154,37 @@ async function findBillingRecord(
   return matches.at(-1) ?? null;
 }
 
+async function clearRoomBillingHistory(room: number): Promise<void> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: bills, error: listError } = await supabase
+    .from("billing_records")
+    .select("id")
+    .eq("room", room);
+
+  if (listError) throw new Error(listError.message);
+
+  const billingIds = (bills ?? []).map(
+    (row) => (row as { id: string }).id,
+  );
+
+  if (billingIds.length > 0) {
+    const { error: activityError } = await supabase
+      .from("payment_activities")
+      .delete()
+      .in("billing_record_id", billingIds);
+
+    if (activityError) throw new Error(activityError.message);
+  }
+
+  const { error: billingError } = await supabase
+    .from("billing_records")
+    .delete()
+    .eq("room", room);
+
+  if (billingError) throw new Error(billingError.message);
+}
+
 export async function saveSupabaseTenant(
   data: TenantSaveData,
 ): Promise<ApiResult> {
@@ -183,6 +214,9 @@ export async function saveSupabaseTenant(
       };
     }
 
+    // Clear prior occupant billing so the next tenant starts with a clean slate.
+    await clearRoomBillingHistory(room);
+
     const { error } = await supabase
       .from("tenants")
       .update({
@@ -201,7 +235,23 @@ export async function saveSupabaseTenant(
       .eq("room", room);
 
     if (error) throw new Error(error.message);
-    return { success: true, message: "Room set to Vacant." };
+    return {
+      success: true,
+      message: "Room set to Vacant. Prior billing history cleared.",
+    };
+  }
+
+  const wasVacant = !current || current.status === "Vacant" || !current.name.trim();
+  const incomingName = String(data.name ?? "").trim();
+  const isDifferentOccupant =
+    Boolean(current?.name?.trim()) &&
+    current.status === "Active" &&
+    incomingName.length > 0 &&
+    current.name.trim().toLowerCase() !== incomingName.toLowerCase();
+
+  // New assignment or full tenant swap → drop previous room billing.
+  if (wasVacant || isDifferentOccupant) {
+    await clearRoomBillingHistory(room);
   }
 
   const payload = {
@@ -226,8 +276,15 @@ export async function saveSupabaseTenant(
 
   if (error) throw new Error(error.message);
 
-  if (current?.status === "Vacant") {
+  if (wasVacant) {
     return { success: true, message: "Tenant assigned to vacant room." };
+  }
+
+  if (isDifferentOccupant) {
+    return {
+      success: true,
+      message: "Tenant replaced. Prior billing history cleared.",
+    };
   }
 
   if (current) {

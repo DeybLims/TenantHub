@@ -101,7 +101,8 @@ export function Dashboard() {
         {
           utility: "Electricity",
           actualCost: electricityActual || electricityRow?.actualCost || 0,
-          tenantPaid: electricityRow?.tenantPaid || 0,
+          tenantPaid:
+            electricityRow?.tenantPaid || expenseAnalytics.paidTenantBilled,
           profitLoss: 0,
         },
         {

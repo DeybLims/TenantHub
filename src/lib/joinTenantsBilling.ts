@@ -1,4 +1,5 @@
 import { billingMonthsMatch, formatMonthLabel, sortMonths } from "@/lib/months";
+import { buildTenantBillingSummary } from "@/lib/tenantBillingSummary";
 import { buildTenantRowsForMonth } from "@/lib/tenantRooms";
 import type { MonthOption } from "@/types/dashboard";
 import type { SheetRow } from "@/types/sheet";
@@ -15,32 +16,25 @@ export interface TenantTableRow extends TenantRecord {
   displayStatus: TenantDisplayStatus;
 }
 
-function readRoom(room: number | string): number {
-  const n = Number(room);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function normalizeBillingStatus(status: string): TenantDisplayStatus | null {
+function normalizeOverallStatus(status: string): TenantDisplayStatus {
   const value = status.trim().toLowerCase();
   if (value === "paid") return "Paid";
   if (value === "unpaid") return "Unpaid";
   if (value === "partial") return "Partial";
-  return null;
+  if (value === "no bill") return "No Bill";
+  return "No Bill";
 }
 
 export function resolveTenantDisplayStatus(
   tenant: TenantRecord,
-  billingRow: SheetRow | undefined,
+  billingRows: SheetRow[],
 ): TenantDisplayStatus {
   if (tenant.Status === "Vacant") {
     return "Vacant";
   }
 
-  if (billingRow) {
-    return normalizeBillingStatus(String(billingRow.Status)) ?? "No Bill";
-  }
-
-  return "No Bill";
+  const summary = buildTenantBillingSummary(billingRows, tenant.Room, tenant);
+  return normalizeOverallStatus(summary.status);
 }
 
 export function joinTenantsWithBilling(
@@ -50,27 +44,10 @@ export function joinTenantsWithBilling(
 ): TenantTableRow[] {
   const roomTenants = buildTenantRowsForMonth(tenants, selectedMonth);
 
-  if (!selectedMonth) {
-    return roomTenants.map((tenant) => ({
-      ...tenant,
-      displayStatus: resolveTenantDisplayStatus(tenant, undefined),
-    }));
-  }
-
-  const monthBilling = billing.filter((row) =>
-    billingMonthsMatch(row.Month, selectedMonth),
-  );
-
-  return roomTenants.map((tenant) => {
-    const billingRow = monthBilling.find(
-      (row) => readRoom(row.Room) === tenant.Room,
-    );
-
-    return {
-      ...tenant,
-      displayStatus: resolveTenantDisplayStatus(tenant, billingRow),
-    };
-  });
+  return roomTenants.map((tenant) => ({
+    ...tenant,
+    displayStatus: resolveTenantDisplayStatus(tenant, billing),
+  }));
 }
 
 export function getBillingMonthOptions(rows: SheetRow[]): MonthOption[] {
@@ -93,6 +70,7 @@ export function findTenantBillingRow(
 ): SheetRow | undefined {
   if (!month) return undefined;
   return billing.find(
-    (row) => readRoom(row.Room) === room && billingMonthsMatch(row.Month, month),
+    (row) =>
+      Number(row.Room) === room && billingMonthsMatch(row.Month, month),
   );
 }

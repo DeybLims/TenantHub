@@ -163,7 +163,11 @@ export function ExpenseExportReport({
             value={formatExpenseAmount(derived.jjcCalculatedAmount)}
           />
           <SummaryRow
-            label="Motor Power Usage"
+            label="Tenant Consumption"
+            value={formatExpenseAmount(derived.apartmentCalculatedAmount)}
+          />
+          <SummaryRow
+            label="Motor Consumption"
             value={formatExpenseAmount(derived.motorCalculatedAmount)}
           />
           <SummaryRow

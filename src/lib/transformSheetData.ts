@@ -15,6 +15,10 @@ import {
   monthChartLabel,
   sortMonths,
 } from "@/lib/months";
+import {
+  allocatePaymentToUtilityBills,
+  isBillingFullyPaid,
+} from "@/lib/paymentAllocation";
 
 function toNumber(value: number | string | undefined | null): number {
   if (value === "" || value == null) return 0;
@@ -34,14 +38,16 @@ function rowPaid(row: SheetRow): number {
   return toNumber(row.Paid);
 }
 
-function allocatedUtility(row: SheetRow, bill: number): number {
-  const due = rowTotalDue(row);
-  if (due <= 0 || bill <= 0) return 0;
-  if (row.Status === "Paid") return bill;
-  if (row.Status === "Partial") {
-    return Math.min(bill, (rowPaid(row) / due) * bill);
+function rowUtilityPaid(row: SheetRow): { electricity: number; water: number } {
+  const paid = rowPaid(row);
+  const elecBill = toNumber(row.ElecBill);
+  const waterBill = toNumber(row.WaterBill);
+  if (paid <= 0 && row.Status !== "Paid") {
+    return { electricity: 0, water: 0 };
   }
-  return 0;
+  return allocatePaymentToUtilityBills(paid, elecBill, waterBill, {
+    fullyPaid: isBillingFullyPaid(row.Status, paid, rowTotalDue(row)),
+  });
 }
 
 function isLegacySheet(rows: SheetRow[]): boolean {
@@ -222,15 +228,20 @@ function buildTenantMonthDashboard(rows: SheetRow[]): Omit<
     (sum, r) => sum + toNumber(r.ElecBill),
     0,
   );
-  const electricityTenantPaid = tenants.reduce(
-    (sum, r) => sum + allocatedUtility(r, toNumber(r.ElecBill)),
-    0,
-  );
   const waterActual = tenants.reduce((sum, r) => sum + toNumber(r.WaterBill), 0);
-  const waterTenantPaid = tenants.reduce(
-    (sum, r) => sum + allocatedUtility(r, toNumber(r.WaterBill)),
-    0,
+
+  const utilityPaid = tenants.reduce(
+    (acc, r) => {
+      const paid = rowUtilityPaid(r);
+      return {
+        electricity: acc.electricity + paid.electricity,
+        water: acc.water + paid.water,
+      };
+    },
+    { electricity: 0, water: 0 },
   );
+  const electricityTenantPaid = utilityPaid.electricity;
+  const waterTenantPaid = utilityPaid.water;
 
   const utilities: UtilityRow[] = [
     buildUtilityRow("Electricity", electricityActual, electricityTenantPaid),

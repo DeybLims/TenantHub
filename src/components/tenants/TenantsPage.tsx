@@ -90,7 +90,7 @@ export function TenantsPage() {
   const selectedBillingSummary = useMemo(() => {
     if (!selectedTenantRow) return null;
     return buildTenantBillingSummary(
-      billingRows,
+      billingRows ?? [],
       selectedTenantRow.Room,
       selectedTenantRow,
     );
@@ -228,7 +228,7 @@ export function TenantsPage() {
             {selectedTenantRow ? (
               <TenantDetails
                 tenant={selectedTenantRow}
-                billingRows={billingRows}
+                billingRows={billingRows ?? []}
                 onSave={handleSaveTenant}
                 onDelete={handleDeleteTenant}
                 isSaving={saveTenantMutation.isPending}

@@ -244,7 +244,8 @@ export async function saveSupabaseTenant(
   const wasVacant = !current || current.status === "Vacant" || !current.name.trim();
   const incomingName = String(data.name ?? "").trim();
   const isDifferentOccupant =
-    Boolean(current?.name?.trim()) &&
+    current != null &&
+    Boolean(current.name?.trim()) &&
     current.status === "Active" &&
     incomingName.length > 0 &&
     current.name.trim().toLowerCase() !== incomingName.toLowerCase();

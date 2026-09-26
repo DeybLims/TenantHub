@@ -35,6 +35,7 @@ import {
   getMockTenants,
 } from "@/services/api";
 import type { Bill, BillingTableRow } from "@/types/billing";
+import type { TenantRecord } from "@/types/tenant";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
@@ -78,6 +79,30 @@ function laterMonthDate(a: string, b: string): string {
   if (!aKey) return b;
   if (!bKey) return a;
   return aKey >= bKey ? a : b;
+}
+
+/**
+ * Drop bills from before the current tenant's move-in / lease start so the
+ * table status matches the invoice (no prior-occupant Partial ghosts).
+ */
+function filterBillingRowsByOccupancy(
+  rows: BillingTableRow[],
+  tenants: TenantRecord[],
+): BillingTableRow[] {
+  const occupancyByRoom = new Map<number, string>();
+  for (const tenant of tenants) {
+    const from = tenantOccupancyFromDate(tenant);
+    if (from) occupancyByRoom.set(tenant.Room, from);
+  }
+
+  return rows.filter((row) => {
+    const from = occupancyByRoom.get(row.room);
+    if (!from) return true;
+    const rowKey = billingMonthKey(row.month);
+    const fromKey = billingMonthKey(from);
+    if (!rowKey || !fromKey) return true;
+    return rowKey >= fromKey;
+  });
 }
 
 export function BillingPage() {
@@ -137,7 +162,7 @@ export function BillingPage() {
       }
     }
 
-    return filterBillingRowsByDateRange(
+    const inDateRange = filterBillingRowsByDateRange(
       Array.from(unique.values()).sort((a, b) => {
         const monthDiff =
           new Date(b.month).getTime() - new Date(a.month).getTime();
@@ -147,6 +172,8 @@ export function BillingPage() {
       fromDate,
       toDate,
     );
+
+    return filterBillingRowsByOccupancy(inDateRange, tenants);
   }, [billingRows, tenants, fromDate, toDate]);
 
   const filteredRows = useMemo(
@@ -259,7 +286,7 @@ export function BillingPage() {
     if (balance <= 0 && totalDue > 0) status = "Paid";
     else if (paid > 0 && balance > 0) status = "Partial";
 
-    const latestBill = bills.at(-1);
+    const latestBill = bills[0];
     const latestSheet = roomSheetRows
       .slice()
       .sort(

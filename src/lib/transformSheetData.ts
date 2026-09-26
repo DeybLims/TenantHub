@@ -250,7 +250,7 @@ function buildTenantMonthDashboard(rows: SheetRow[]): Omit<
 
   const utilityCharges = utilities.reduce((sum, row) => sum + row.actualCost, 0);
   const tenantCollections = utilities.reduce((sum, row) => sum + row.tenantPaid, 0);
-  const netIncome = utilities.reduce((sum, row) => sum + row.profitLoss, 0);
+  const netIncome = roundCurrency(collected - utilityCharges);
 
   return {
     kpis: {
@@ -300,8 +300,7 @@ function buildLegacyMonthDashboard(rows: SheetRow[]): Omit<
   const utilityCharges = utilities.reduce((sum, row) => sum + row.actualCost, 0);
   const tenantCollections = utilities.reduce((sum, row) => sum + row.tenantPaid, 0);
   const netIncome =
-    toNumber(netRow?.ElecBill) ||
-    utilities.reduce((sum, row) => sum + row.profitLoss, 0);
+    toNumber(netRow?.ElecBill) || roundCurrency(collected - utilityCharges);
 
   return {
     kpis: {

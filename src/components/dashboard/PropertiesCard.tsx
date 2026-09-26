@@ -38,7 +38,11 @@ export function PropertiesCard({ properties }: PropertiesCardProps) {
                   </span>
                 )}
               </div>
-              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-navy">
+              <span
+                className={`pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold ${
+                  percent >= 70 ? "text-white" : "text-navy"
+                }`}
+              >
                 {percentLabel}
               </span>
             </div>

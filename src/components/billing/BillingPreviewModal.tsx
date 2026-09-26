@@ -13,6 +13,7 @@ import { formatLongDate, formatPesoDecimal } from "@/lib/format";
 import {
   formatPaymentActivityLine,
   formatStatementPeriodCompact,
+  oldestUnpaidBill,
   summarizeBills,
 } from "@/lib/mapBillingViewModel";
 import { getTenantInitials } from "@/lib/tenantInitials";
@@ -255,17 +256,15 @@ export function BillingPreviewModal({
 
   const summary = useMemo(() => summarizeBills(bills), [bills]);
   const statementPeriod = formatStatementPeriodCompact(fromDate, toDate);
-  const payableBill =
-    bills.find((bill) => bill.balance > 0) ?? bills[0] ?? null;
+  // Pay oldest outstanding first (list itself stays newest → oldest).
+  const payableBill = oldestUnpaidBill(bills) ?? bills[0] ?? null;
 
   useEffect(() => {
     if (!open) {
       setExpandedBillId(null);
       return;
     }
-    // Expand the oldest unpaid bill (bills are sorted oldest → newest).
-    const focus =
-      bills.find((bill) => bill.balance > 0) ?? bills[0] ?? null;
+    const focus = oldestUnpaidBill(bills) ?? bills[0] ?? null;
     setExpandedBillId(focus?.id ?? null);
   }, [open, bills]);
 

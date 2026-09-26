@@ -133,7 +133,9 @@ export function Dashboard() {
       (sum, row) => sum + row.tenantPaid,
       0,
     );
-    const netIncome = utilities.reduce((sum, row) => sum + row.profitLoss, 0);
+    // Net Income = all tenant payments collected this month − utility charges.
+    // (Not utility-only P&L — that stays in Operating Expenses status column.)
+    const netIncome = data.paymentStatus.collected - utilityCharges;
 
     return {
       utilityCharges,

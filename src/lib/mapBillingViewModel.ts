@@ -196,8 +196,20 @@ export function buildBillsForRoom(
     .map((row) => sheetRowToBill(row, tenant))
     .sort(
       (a, b) =>
-        new Date(a.billingMonth).getTime() - new Date(b.billingMonth).getTime(),
+        new Date(b.billingMonth).getTime() - new Date(a.billingMonth).getTime(),
     );
+}
+
+/** Oldest bill with an open balance — payments clear from earliest unpaid upward. */
+export function oldestUnpaidBill(bills: Bill[]): Bill | null {
+  const unpaid = [...bills]
+    .filter((bill) => bill.balance > 0)
+    .sort(
+      (a, b) =>
+        new Date(a.billingMonth).getTime() -
+        new Date(b.billingMonth).getTime(),
+    );
+  return unpaid[0] ?? null;
 }
 
 /**

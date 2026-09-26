@@ -72,6 +72,12 @@ function NumberField({
 
   const displayValue = focused ? draft : value > 0 ? String(value) : "";
 
+  const commitDraft = (raw: string) => {
+    // Keep typing "15." without forcing a parent update mid-decimal.
+    if (raw.endsWith(".")) return;
+    onChange(parseNonNegativeNumber(raw));
+  };
+
   return (
     <FloatingLabelField label={label}>
       <div className="relative">
@@ -89,6 +95,7 @@ function NumberField({
             const next = event.target.value;
             if (!isDecimalDraft(next)) return;
             setDraft(next);
+            commitDraft(next);
           }}
           onBlur={() => {
             setFocused(false);
@@ -135,6 +142,11 @@ function CurrencyField({
       ? String(value)
       : "";
 
+  const commitDraft = (raw: string) => {
+    if (raw.endsWith(".")) return;
+    onChange?.(parseNonNegativeNumber(raw));
+  };
+
   return (
     <FloatingLabelField label={label}>
       <div className="relative">
@@ -158,6 +170,7 @@ function CurrencyField({
             const next = event.target.value;
             if (!isDecimalDraft(next)) return;
             setDraft(next);
+            commitDraft(next);
           }}
           onBlur={() => {
             if (readOnly) return;
@@ -281,14 +294,12 @@ export function ExpenseForm({
   };
 
   const handleElecTotalChange = (total: number) => {
+    // Fresh total → unlock parts so they auto-split / rebalance again.
+    setElecTouched(EMPTY_TOUCHED);
     applyElecParts(
       total,
-      {
-        a: record.jjcConsumptionKwh,
-        b: record.apartmentConsumptionKwh,
-        c: record.motorConsumptionKwh,
-      },
-      elecTouched,
+      { a: 0, b: 0, c: 0 },
+      EMPTY_TOUCHED,
     );
   };
 
@@ -296,11 +307,19 @@ export function ExpenseForm({
     key: keyof ConsumptionTouched,
     value: number,
   ) => {
-    const nextTouched: ConsumptionTouched = {
-      ...elecTouched,
-      // Clearing a field releases it back to auto-allocation.
-      [key]: value > 0,
-    };
+    const allLocked = elecTouched.a && elecTouched.b && elecTouched.c;
+    // After a saved/auto split locked every part, editing one field should
+    // re-open the others for remaining allocation (JJC + Tenant + Motor = total).
+    const nextTouched: ConsumptionTouched = allLocked
+      ? {
+          a: key === "a" && value > 0,
+          b: key === "b" && value > 0,
+          c: key === "c" && value > 0,
+        }
+      : {
+          ...elecTouched,
+          [key]: value > 0,
+        };
     setElecTouched(nextTouched);
     applyElecParts(
       record.meralcoTotalConsumptionKwh,
@@ -314,25 +333,25 @@ export function ExpenseForm({
   };
 
   const handleWaterTotalChange = (total: number) => {
-    applyWaterParts(
-      total,
-      {
-        a: record.miwdResidentialM3,
-        b: record.miwdCommercialM3,
-        c: record.pumpedWaterChargeM3,
-      },
-      waterTouched,
-    );
+    setWaterTouched(EMPTY_TOUCHED);
+    applyWaterParts(total, { a: 0, b: 0, c: 0 }, EMPTY_TOUCHED);
   };
 
   const handleWaterPartChange = (
     key: keyof ConsumptionTouched,
     value: number,
   ) => {
-    const nextTouched: ConsumptionTouched = {
-      ...waterTouched,
-      [key]: value > 0,
-    };
+    const allLocked = waterTouched.a && waterTouched.b && waterTouched.c;
+    const nextTouched: ConsumptionTouched = allLocked
+      ? {
+          a: key === "a" && value > 0,
+          b: key === "b" && value > 0,
+          c: key === "c" && value > 0,
+        }
+      : {
+          ...waterTouched,
+          [key]: value > 0,
+        };
     setWaterTouched(nextTouched);
     applyWaterParts(
       record.miwdTotalConsumptionM3,

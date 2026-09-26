@@ -69,6 +69,17 @@ function dateRangeCoveringRoomMonths(
   return { from, to };
 }
 
+/** Later of two YYYY-MM-DD (or month) inputs by calendar month. */
+function laterMonthDate(a: string, b: string): string {
+  if (!a) return b;
+  if (!b) return a;
+  const aKey = billingMonthKey(a);
+  const bKey = billingMonthKey(b);
+  if (!aKey) return b;
+  if (!bKey) return a;
+  return aKey >= bKey ? a : b;
+}
+
 export function BillingPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
@@ -148,26 +159,27 @@ export function BillingPage() {
     [filteredRows],
   );
 
-  // Statement modal: bills for this room since the current tenant's move-in
-  // (prior occupant history must not appear under the new tenant).
+  // Invoice modal: bills for this room in the selected date range,
+  // never earlier than the current tenant's move-in / lease start.
   const tenantBills = useMemo(() => {
     if (!selectedRow) return [];
     const tenant = tenants.find((item) => item.Room === selectedRow.room);
     const occupancyFrom = tenantOccupancyFromDate(tenant);
+    const rangeFrom = laterMonthDate(occupancyFrom, fromDate);
     return buildBillsForRoom(
       billingRows,
       tenants,
       selectedRow.room,
-      occupancyFrom || undefined,
+      rangeFrom || undefined,
+      toDate || undefined,
     );
-  }, [billingRows, tenants, selectedRow]);
+  }, [billingRows, tenants, selectedRow, fromDate, toDate]);
 
-  const statementRange = useMemo(() => {
-    const covered = dateRangeCoveringRoomMonths(
-      tenantBills.map((bill) => bill.billingMonth),
-    );
-    return covered ?? { from: fromDate, to: toDate };
-  }, [tenantBills, fromDate, toDate]);
+  // Statement Period always matches the Billing page Date Range filter.
+  const statementRange = useMemo(
+    () => ({ from: fromDate, to: toDate }),
+    [fromDate, toDate],
+  );
 
   const isLoading = tenantsQuery.isLoading || billingQuery.isLoading;
   const isError = tenantsQuery.isError || billingQuery.isError;
@@ -230,6 +242,16 @@ export function BillingPage() {
       roomNumber,
       occupancyFrom || undefined,
     );
+    // Overall statement from Tenants: widen the page date range to cover
+    // every occupancy bill so Statement Period matches the history shown.
+    const covered = dateRangeCoveringRoomMonths(
+      bills.map((bill) => bill.billingMonth),
+    );
+    if (covered) {
+      setFromDate(covered.from);
+      setToDate(covered.to);
+    }
+
     const totalDue = bills.reduce((sum, bill) => sum + bill.totalDue, 0);
     const paid = bills.reduce((sum, bill) => sum + bill.amountPaid, 0);
     const balance = Math.max(0, totalDue - paid);
@@ -237,7 +259,7 @@ export function BillingPage() {
     if (balance <= 0 && totalDue > 0) status = "Paid";
     else if (paid > 0 && balance > 0) status = "Partial";
 
-    const latestBill = bills[0];
+    const latestBill = bills.at(-1);
     const latestSheet = roomSheetRows
       .slice()
       .sort(

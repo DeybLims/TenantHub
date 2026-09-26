@@ -263,7 +263,10 @@ export function BillingPreviewModal({
       setExpandedBillId(null);
       return;
     }
-    setExpandedBillId(bills[0]?.id ?? null);
+    // Expand the oldest unpaid bill (bills are sorted oldest → newest).
+    const focus =
+      bills.find((bill) => bill.balance > 0) ?? bills[0] ?? null;
+    setExpandedBillId(focus?.id ?? null);
   }, [open, bills]);
 
   useEffect(() => {
@@ -364,7 +367,7 @@ export function BillingPreviewModal({
 
           <section>
             <h3 className="mb-3 text-sm font-bold text-navy">
-              Billing History (Overall Statement)
+              Billing History
             </h3>
 
             {bills.length === 0 ? (

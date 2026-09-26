@@ -21,6 +21,7 @@ import {
   getMockTenants,
 } from "@/services/api";
 import { transformSheetToDashboard } from "@/lib/transformSheetData";
+import { buildOccupancyFromTenants } from "@/lib/tenantRooms";
 import type { UtilityRow } from "@/types/dashboard";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
@@ -47,10 +48,10 @@ export function Dashboard() {
     return transformSheetToDashboard(rows, selectedMonth || undefined);
   }, [billingQuery.data, selectedMonth]);
 
-  const isLoading = billingQuery.isLoading;
-  const isFetching = billingQuery.isFetching;
-  const isError = billingQuery.isError;
-  const error = billingQuery.error;
+  const isLoading = billingQuery.isLoading || tenantsQuery.isLoading;
+  const isFetching = billingQuery.isFetching || tenantsQuery.isFetching;
+  const isError = billingQuery.isError || tenantsQuery.isError;
+  const error = billingQuery.error ?? tenantsQuery.error;
 
   useEffect(() => {
     if (data?.activeMonth && !selectedMonth) {
@@ -142,6 +143,16 @@ export function Dashboard() {
     };
   }, [data, utilities]);
 
+  // Occupancy follows the tenants roster (same source as Tenants page),
+  // not whether a billing row exists for the selected month.
+  const properties = useMemo(() => {
+    const tenants = tenantsQuery.data;
+    if (tenants?.length) {
+      return buildOccupancyFromTenants(tenants);
+    }
+    return data?.properties ?? [];
+  }, [tenantsQuery.data, data?.properties]);
+
   if (isInitialLoad) {
     return (
       <DashboardLayout monthSelector={monthSelector}>
@@ -160,7 +171,7 @@ export function Dashboard() {
     );
   }
 
-  const { paymentStatus, properties } = data;
+  const { paymentStatus } = data;
 
   return (
     <DashboardLayout monthSelector={monthSelector}>

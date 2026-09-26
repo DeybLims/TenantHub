@@ -196,7 +196,7 @@ export function buildBillsForRoom(
     .map((row) => sheetRowToBill(row, tenant))
     .sort(
       (a, b) =>
-        new Date(b.billingMonth).getTime() - new Date(a.billingMonth).getTime(),
+        new Date(a.billingMonth).getTime() - new Date(b.billingMonth).getTime(),
     );
 }
 
@@ -255,13 +255,26 @@ export function formatStatementPeriodCompact(
     return date.toLocaleDateString("en-US", { month: "long" }).toUpperCase();
   };
 
-  const to = new Date(toDate || fromDate);
-  const year = Number.isNaN(to.getTime()) ? "" : String(to.getFullYear());
+  const formatYear = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return String(date.getFullYear());
+  };
+
   const fromMonth = formatMonth(fromDate);
   const toMonth = formatMonth(toDate || fromDate);
+  const fromYear = formatYear(fromDate);
+  const toYear = formatYear(toDate || fromDate);
 
-  if (fromMonth === toMonth) return `${fromMonth} ${year}`.trim();
-  return `${fromMonth} - ${toMonth} ${year}`.trim();
+  if (fromMonth === toMonth && fromYear === toYear) {
+    return `${fromMonth} ${toYear}`.trim();
+  }
+
+  if (fromYear && toYear && fromYear !== toYear) {
+    return `${fromMonth} ${fromYear} - ${toMonth} ${toYear}`.trim();
+  }
+
+  return `${fromMonth} - ${toMonth} ${toYear}`.trim();
 }
 
 export function formatBillDateBlock(dateValue: string): {

@@ -39,6 +39,19 @@ function SectionTitle({ children }: { children: string }) {
   );
 }
 
+function parseNonNegativeNumber(raw: string): number {
+  const trimmed = raw.trim();
+  if (!trimmed) return 0;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return parsed;
+}
+
+/** Allow empty / intermediate decimal drafts like "", "15.", "0.5" while typing. */
+function isDecimalDraft(raw: string): boolean {
+  return raw === "" || /^\d*\.?\d*$/.test(raw);
+}
+
 function NumberField({
   label,
   value,
@@ -54,16 +67,33 @@ function NumberField({
   placeholder?: string;
   hint?: string;
 }) {
+  const [focused, setFocused] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const displayValue = focused ? draft : value > 0 ? String(value) : "";
+
   return (
     <FloatingLabelField label={label}>
       <div className="relative">
         <input
-          type="number"
-          min={0}
-          step="any"
-          value={value || ""}
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          value={displayValue}
           placeholder={placeholder}
-          onChange={(event) => onChange(Number(event.target.value) || 0)}
+          onFocus={() => {
+            setFocused(true);
+            setDraft(value > 0 ? String(value) : "");
+          }}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (!isDecimalDraft(next)) return;
+            setDraft(next);
+          }}
+          onBlur={() => {
+            setFocused(false);
+            onChange(parseNonNegativeNumber(draft));
+          }}
           className={`${inputClass} ${unit ? "pr-14" : ""}`}
         />
         {unit && (
@@ -86,6 +116,7 @@ function CurrencyField({
   readOnly = false,
   highlight = false,
   placeholder = "0.00",
+  hint,
 }: {
   label: string;
   value: number;
@@ -93,7 +124,17 @@ function CurrencyField({
   readOnly?: boolean;
   highlight?: boolean;
   placeholder?: string;
+  hint?: string;
 }) {
+  const [focused, setFocused] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const displayValue = focused
+    ? draft
+    : value > 0
+      ? String(value)
+      : "";
+
   return (
     <FloatingLabelField label={label}>
       <div className="relative">
@@ -101,16 +142,34 @@ function CurrencyField({
           ₱
         </span>
         <input
-          type="number"
-          min={0}
-          step="any"
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
           readOnly={readOnly}
-          value={value || ""}
+          value={displayValue}
           placeholder={placeholder}
-          onChange={(event) => onChange?.(Number(event.target.value) || 0)}
+          onFocus={() => {
+            if (readOnly) return;
+            setFocused(true);
+            setDraft(value > 0 ? String(value) : "");
+          }}
+          onChange={(event) => {
+            if (readOnly) return;
+            const next = event.target.value;
+            if (!isDecimalDraft(next)) return;
+            setDraft(next);
+          }}
+          onBlur={() => {
+            if (readOnly) return;
+            setFocused(false);
+            onChange?.(parseNonNegativeNumber(draft));
+          }}
           className={`${inputClass} pl-8 text-right ${readOnly ? "cursor-default bg-blue-50/80 font-semibold text-blue-700" : ""} ${highlight && !readOnly ? "bg-blue-50/80" : ""} ${highlight && readOnly ? "bg-blue-50/80" : ""}`}
         />
       </div>
+      {hint ? (
+        <p className="mt-1 text-[11px] text-gray-400">{hint}</p>
+      ) : null}
     </FloatingLabelField>
   );
 }
@@ -171,10 +230,21 @@ export function ExpenseForm({
     parts: { a: number; b: number; c: number },
     touched: ConsumptionTouched,
   ) => {
-    const allocated =
-      total > 0
-        ? allocateRemainingConsumption(total, parts, touched)
-        : parts;
+    // Clearing the total resets the whole electricity consumption block.
+    if (total <= 0) {
+      setElecTouched(EMPTY_TOUCHED);
+      onRecordChange({
+        meralcoTotalConsumptionKwh: 0,
+        jjcConsumptionKwh: 0,
+        apartmentConsumptionKwh: 0,
+        motorConsumptionKwh: 0,
+        meralcoBillAmount: 0,
+        meralcoPaidThisMonth: 0,
+      });
+      return;
+    }
+
+    const allocated = allocateRemainingConsumption(total, parts, touched);
     onRecordChange({
       meralcoTotalConsumptionKwh: total,
       jjcConsumptionKwh: allocated.a,
@@ -188,10 +258,20 @@ export function ExpenseForm({
     parts: { a: number; b: number; c: number },
     touched: ConsumptionTouched,
   ) => {
-    const allocated =
-      total > 0
-        ? allocateRemainingConsumption(total, parts, touched)
-        : parts;
+    if (total <= 0) {
+      setWaterTouched(EMPTY_TOUCHED);
+      onRecordChange({
+        miwdTotalConsumptionM3: 0,
+        miwdResidentialM3: 0,
+        miwdCommercialM3: 0,
+        pumpedWaterChargeM3: 0,
+        miwdBillAmount: 0,
+        miwdPaidThisMonth: 0,
+      });
+      return;
+    }
+
+    const allocated = allocateRemainingConsumption(total, parts, touched);
     onRecordChange({
       miwdTotalConsumptionM3: total,
       miwdResidentialM3: allocated.a,
@@ -335,7 +415,7 @@ export function ExpenseForm({
                 hint={
                   elecPartsSum > 0
                     ? `JJC + Tenant + Motor = ${elecPartsSum.toFixed(2)} kWh`
-                    : undefined
+                    : "kWh from the Meralco bill (consumption only)"
                 }
               />
               <NumberField
@@ -386,12 +466,8 @@ export function ExpenseForm({
                   onRecordChange({ meralcoBillAmount: value })
                 }
                 highlight
-                placeholder={
-                  derived.computedMeralcoMasterBill > 0 &&
-                  record.meralcoBillAmount <= 0
-                    ? derived.computedMeralcoMasterBill.toFixed(2)
-                    : "Enter master bill"
-                }
+                placeholder="0.00"
+                hint="Total ₱ charged by Meralco (separate from kWh)"
               />
               <CurrencyField
                 label="Amount Paid This Month"
@@ -431,7 +507,7 @@ export function ExpenseForm({
                           record.miwdCommercialM3 +
                           record.pumpedWaterChargeM3,
                       ).toFixed(2)} m³`
-                    : undefined
+                    : "m³ from the MIWD bill (consumption only)"
                 }
               />
               <NumberField
@@ -478,11 +554,8 @@ export function ExpenseForm({
                 value={record.miwdBillAmount}
                 onChange={(value) => onRecordChange({ miwdBillAmount: value })}
                 highlight
-                placeholder={
-                  derived.computedMiwdMasterBill > 0 && record.miwdBillAmount <= 0
-                    ? derived.computedMiwdMasterBill.toFixed(2)
-                    : "Enter master bill"
-                }
+                placeholder="0.00"
+                hint="Total ₱ charged by MIWD (separate from m³)"
               />
               <CurrencyField
                 label="Amount Paid This Month"

@@ -65,11 +65,8 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
     record.motorConsumptionKwh * motorElecRate,
   );
 
-  const allocatedMeralco = roundCurrency(
-    jjcCalculatedAmount + apartmentCalculatedAmount + motorCalculatedAmount,
-  );
-  const computedMeralcoMasterBill =
-    meralcoMasterBill > 0 ? meralcoMasterBill : allocatedMeralco;
+  // Master bill is the peso amount from Meralco — never infer it from kWh × rate.
+  const computedMeralcoMasterBill = meralcoMasterBill;
 
   const waterPartsSum = roundCurrency(
     record.miwdResidentialM3 +
@@ -102,11 +99,8 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
     record.pumpedWaterChargeM3 * waterMotorRate,
   );
 
-  const allocatedMiwd = roundCurrency(
-    miwdResidentialAmount + miwdCommercialAmount + pumpedWaterAmount,
-  );
-  const computedMiwdMasterBill =
-    miwdMasterBill > 0 ? miwdMasterBill : allocatedMiwd;
+  // MIWD master bill is the peso amount from the water bill — not m³ × rate.
+  const computedMiwdMasterBill = miwdMasterBill;
 
   return {
     meralcoTrueRate: roundCurrency(meralcoRate),

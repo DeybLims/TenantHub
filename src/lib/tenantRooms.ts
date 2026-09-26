@@ -5,6 +5,9 @@ export const TOTAL_RENTAL_ROOMS = 8;
 
 export const RENTAL_ROOM_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
+export const APARTMENT_ROOMS = [1, 2, 3, 4, 5, 6] as const;
+export const COMMERCIAL_ROOMS = [7, 8] as const;
+
 export function createVacantPlaceholder(room: number): TenantRecord {
   return {
     UnitCode: "",
@@ -139,4 +142,33 @@ export function getVacantTenantSlots(tenants: TenantRecord[]): VacantTenantSlot[
 
     return { room, unitCode };
   });
+}
+
+/**
+ * Occupancy from the tenants roster (Active vs Vacant), not from whether a
+ * billing row exists for the selected dashboard month.
+ */
+export function buildOccupancyFromTenants(
+  tenants: TenantRecord[],
+): Array<{ label: string; occupied: number; total: number }> {
+  const byRoom = dedupeTenantsByRoom(tenants);
+
+  const countOccupied = (rooms: readonly number[]) =>
+    rooms.filter((room) => {
+      const tenant = byRoom.find((row) => row.Room === room);
+      return !isVacantTenant(tenant) && Boolean(tenant?.Name.trim());
+    }).length;
+
+  return [
+    {
+      label: "Apartment",
+      occupied: countOccupied(APARTMENT_ROOMS),
+      total: APARTMENT_ROOMS.length,
+    },
+    {
+      label: "Commercial",
+      occupied: countOccupied(COMMERCIAL_ROOMS),
+      total: COMMERCIAL_ROOMS.length,
+    },
+  ];
 }

@@ -378,6 +378,11 @@ export function ExpenseForm({
         })
       : 0;
 
+  const waterPartsSum = roundCurrency(
+    record.miwdResidentialM3 +
+      record.miwdCommercialM3 +
+      record.pumpedWaterChargeM3,
+  );
   const waterMismatch =
     record.miwdTotalConsumptionM3 > 0
       ? consumptionMismatch(record.miwdTotalConsumptionM3, {
@@ -393,6 +398,40 @@ export function ExpenseForm({
       : derived.meralcoTrueRate;
   const waterRatePreview =
     record.waterChargeRate > 0 ? record.waterChargeRate : derived.miwdTrueRate;
+
+  // ₱ bill previews from consumption × rate (actual master bill stays manual).
+  const elecBillPreview = roundCurrency(
+    (record.meralcoTotalConsumptionKwh > 0
+      ? record.meralcoTotalConsumptionKwh
+      : elecPartsSum) * Math.max(0, elecRatePreview),
+  );
+  const waterBillPreview = roundCurrency(
+    (record.miwdTotalConsumptionM3 > 0
+      ? record.miwdTotalConsumptionM3
+      : waterPartsSum) * Math.max(0, waterRatePreview),
+  );
+  const elecBalancePreview = roundCurrency(
+    (record.meralcoBillAmount > 0
+      ? record.meralcoBillAmount
+      : elecBillPreview) - record.meralcoPaidThisMonth,
+  );
+  const waterBalancePreview = roundCurrency(
+    (record.miwdBillAmount > 0 ? record.miwdBillAmount : waterBillPreview) -
+      record.miwdPaidThisMonth,
+  );
+
+  const formatBillPreviewHint = (
+    preview: number,
+    consumption: number,
+    rate: number,
+    unit: string,
+  ) => {
+    if (preview <= 0) return undefined;
+    return `Preview: ₱${preview.toLocaleString("en-PH", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} (${consumption.toFixed(2)} ${unit} × ₱${rate.toFixed(2)})`;
+  };
 
   return (
     <article className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -485,8 +524,21 @@ export function ExpenseForm({
                   onRecordChange({ meralcoBillAmount: value })
                 }
                 highlight
-                placeholder="0.00"
-                hint="Total ₱ charged by Meralco (separate from kWh)"
+                placeholder={
+                  elecBillPreview > 0
+                    ? elecBillPreview.toFixed(2)
+                    : "0.00"
+                }
+                hint={
+                  formatBillPreviewHint(
+                    elecBillPreview,
+                    record.meralcoTotalConsumptionKwh > 0
+                      ? record.meralcoTotalConsumptionKwh
+                      : elecPartsSum,
+                    elecRatePreview,
+                    "kWh",
+                  ) ?? "Enter the actual ₱ amount from the Meralco bill"
+                }
               />
               <CurrencyField
                 label="Amount Paid This Month"
@@ -499,9 +551,14 @@ export function ExpenseForm({
               />
               <CurrencyField
                 label="Balance"
-                value={derived.meralcoBalance}
+                value={elecBalancePreview}
                 readOnly
                 highlight
+                hint={
+                  record.meralcoBillAmount <= 0 && elecBillPreview > 0
+                    ? "Using ₱ preview until you enter the master bill"
+                    : undefined
+                }
               />
             </div>
           </div>
@@ -573,8 +630,21 @@ export function ExpenseForm({
                 value={record.miwdBillAmount}
                 onChange={(value) => onRecordChange({ miwdBillAmount: value })}
                 highlight
-                placeholder="0.00"
-                hint="Total ₱ charged by MIWD (separate from m³)"
+                placeholder={
+                  waterBillPreview > 0
+                    ? waterBillPreview.toFixed(2)
+                    : "0.00"
+                }
+                hint={
+                  formatBillPreviewHint(
+                    waterBillPreview,
+                    record.miwdTotalConsumptionM3 > 0
+                      ? record.miwdTotalConsumptionM3
+                      : waterPartsSum,
+                    waterRatePreview,
+                    "m³",
+                  ) ?? "Enter the actual ₱ amount from the MIWD bill"
+                }
               />
               <CurrencyField
                 label="Amount Paid This Month"
@@ -587,9 +657,14 @@ export function ExpenseForm({
               />
               <CurrencyField
                 label="Balance"
-                value={derived.miwdBalance}
+                value={waterBalancePreview}
                 readOnly
                 highlight
+                hint={
+                  record.miwdBillAmount <= 0 && waterBillPreview > 0
+                    ? "Using ₱ preview until you enter the master bill"
+                    : undefined
+                }
               />
             </div>
           </div>

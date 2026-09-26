@@ -124,9 +124,20 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
             value={formatExpenseAmount(derived.motorCalculatedAmount)}
           />
           <AnalyticsRow
+            label="Master Bill Amount"
+            value={formatExpenseAmount(
+              derived.computedMeralcoMasterBill > 0
+                ? derived.computedMeralcoMasterBill
+                : derived.jjcCalculatedAmount +
+                    derived.apartmentCalculatedAmount +
+                    derived.motorCalculatedAmount,
+            )}
+            emphasize
+            alignRight
+          />
+          <AnalyticsRow
             label="Paid Tenant Billed"
             value={formatExpenseAmount(analytics.paidTenantBilled)}
-            emphasize
             alignRight
           />
           <AnalyticsRow
@@ -158,9 +169,20 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
             value={formatExpenseAmount(derived.pumpedWaterAmount)}
           />
           <AnalyticsRow
+            label="Master Bill Amount"
+            value={formatExpenseAmount(
+              derived.computedMiwdMasterBill > 0
+                ? derived.computedMiwdMasterBill
+                : derived.miwdResidentialAmount +
+                    derived.miwdCommercialAmount +
+                    derived.pumpedWaterAmount,
+            )}
+            emphasize
+            alignRight
+          />
+          <AnalyticsRow
             label="Paid Tenant Billed"
             value={formatExpenseAmount(analytics.tenantWaterRevenue)}
-            emphasize
             alignRight
           />
           <AnalyticsRow

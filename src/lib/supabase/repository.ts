@@ -151,7 +151,16 @@ async function findBillingRecord(
     billingRowsMatchMonth(row, month),
   );
 
-  return matches.at(-1) ?? null;
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0];
+
+  // Prefer the row that already has payments / activity when duplicates exist
+  // for the same calendar month (e.g. 2026-07-01 vs 2026-07-31).
+  return [...matches].sort((a, b) => {
+    const paidDiff = Number(b.paid) - Number(a.paid);
+    if (paidDiff !== 0) return paidDiff;
+    return String(b.billing_month).localeCompare(String(a.billing_month));
+  })[0];
 }
 
 async function clearRoomBillingHistory(room: number): Promise<void> {

@@ -1,4 +1,4 @@
-import { billingMonthKey, isIsoMonth } from "@/lib/months";
+import { billingMonthKey } from "@/lib/months";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
 
@@ -45,39 +45,23 @@ export interface DbBillingRow {
 /** Postgres date → Month string the UI expects (matches Google Sheets formats). */
 export function billingDateToSheetMonth(billingMonth: string): string {
   const raw = billingMonth.slice(0, 10);
-  const [, monthStr, dayStr] = raw.split("-");
-  const day = Number(dayStr);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return billingMonth;
+
+  const [yearStr, monthStr] = raw.split("-");
+  const year = Number(yearStr);
   const monthIndex = Number(monthStr) - 1;
-  const year = Number(raw.slice(0, 4));
-
-  if (day === 1) {
-    return new Date(year, monthIndex, 1).toLocaleString("en-US", {
-      month: "long",
-      year: "numeric",
-    });
-  }
-
-  return `${raw}T16:00:00.000Z`;
+  // Always use calendar year/month from the date string (no UTC day-shift).
+  return new Date(year, monthIndex, 1).toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
 }
 
 /** Month string from the UI → Postgres date for storage / lookup. */
 export function sheetMonthToBillingDate(month: string): string {
-  const parsed = new Date(month);
-  if (Number.isNaN(parsed.getTime())) {
-    const key = billingMonthKey(month);
-    if (!key) return month;
-    return `${key}-01`;
-  }
-
-  const year = parsed.getFullYear();
-  const monthIndex = String(parsed.getMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getDate()).padStart(2, "0");
-
-  if (isIsoMonth(month) && day !== "01") {
-    return `${year}-${monthIndex}-${day}`;
-  }
-
-  return `${year}-${monthIndex}-01`;
+  const key = billingMonthKey(month);
+  if (key) return `${key}-01`;
+  return month;
 }
 
 export function mapTenantRow(row: DbTenantRow): TenantRecord {

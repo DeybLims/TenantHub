@@ -184,7 +184,7 @@ export function buildBillsForRoom(
   const fromKey = fromDate ? billingMonthKey(fromDate) : "";
   const toKey = toDate ? billingMonthKey(toDate) : "";
 
-  return billingRows
+  const filtered = billingRows
     .filter((row) => readRoom(row.Room) === room)
     .filter((row) => {
       const rowKey = billingMonthKey(String(row.Month));
@@ -192,23 +192,54 @@ export function buildBillsForRoom(
       if (fromKey && rowKey < fromKey) return false;
       if (toKey && rowKey > toKey) return false;
       return true;
-    })
+    });
+
+  // One bill per calendar month — prefer the row with more paid / activity
+  // (guards against duplicate billing_month dates like 2026-07-01 vs 2026-07-31).
+  const byMonth = new Map<string, SheetRow>();
+  for (const row of filtered) {
+    const key = billingMonthKey(String(row.Month)) || String(row.Month);
+    const existing = byMonth.get(key);
+    if (!existing) {
+      byMonth.set(key, row);
+      continue;
+    }
+    const existingPaid = readSheetNumber(existing.Paid);
+    const nextPaid = readSheetNumber(row.Paid);
+    const existingActs = existing.PaymentActivities?.length ?? 0;
+    const nextActs = row.PaymentActivities?.length ?? 0;
+    if (
+      nextActs > existingActs ||
+      (nextActs === existingActs && nextPaid >= existingPaid)
+    ) {
+      byMonth.set(key, row);
+    }
+  }
+
+  return Array.from(byMonth.values())
     .map((row) => sheetRowToBill(row, tenant))
-    .sort(
-      (a, b) =>
-        new Date(b.billingMonth).getTime() - new Date(a.billingMonth).getTime(),
-    );
+    .sort((a, b) => {
+      const keyA = billingMonthKey(a.billingMonth);
+      const keyB = billingMonthKey(b.billingMonth);
+      if (keyA !== keyB) return keyB.localeCompare(keyA);
+      return (
+        new Date(b.billingMonth).getTime() - new Date(a.billingMonth).getTime()
+      );
+    });
 }
 
 /** Oldest bill with an open balance — payments clear from earliest unpaid upward. */
 export function oldestUnpaidBill(bills: Bill[]): Bill | null {
   const unpaid = [...bills]
     .filter((bill) => bill.balance > 0)
-    .sort(
-      (a, b) =>
-        new Date(a.billingMonth).getTime() -
-        new Date(b.billingMonth).getTime(),
-    );
+    .sort((a, b) => {
+      const keyA = billingMonthKey(a.billingMonth);
+      const keyB = billingMonthKey(b.billingMonth);
+      if (keyA !== keyB) return keyA.localeCompare(keyB);
+      return (
+        new Date(a.billingMonth).getTime() - new Date(b.billingMonth).getTime()
+      );
+    });
   return unpaid[0] ?? null;
 }
 

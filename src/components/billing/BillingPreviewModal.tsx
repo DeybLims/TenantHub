@@ -16,6 +16,7 @@ import {
   oldestUnpaidBill,
   summarizeBills,
 } from "@/lib/mapBillingViewModel";
+import { billingMonthKey } from "@/lib/months";
 import { getTenantInitials } from "@/lib/tenantInitials";
 import type { Bill, PaymentActivity } from "@/types/billing";
 
@@ -70,12 +71,15 @@ function resolvePaymentActivities(bill: Bill): PaymentActivity[] {
 
 function BillDetailTable({
   bill,
+  payTargetBill,
   onPayBalance,
 }: {
   bill: Bill;
+  payTargetBill?: Bill | null;
   onPayBalance?: (bill: Bill) => void;
 }) {
   const paymentActivities = resolvePaymentActivities(bill);
+  const target = payTargetBill ?? bill;
 
   return (
     <div className="space-y-3 bg-blue-50/40 px-4 py-4">
@@ -172,7 +176,11 @@ function BillDetailTable({
           {onPayBalance && (
             <button
               type="button"
-              onClick={() => onPayBalance(bill)}
+              onClick={(event) => {
+                event.stopPropagation();
+                // Always clear the oldest outstanding bill first.
+                onPayBalance(target);
+              }}
               className="mt-3 rounded-lg bg-blue-500 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-600"
             >
               Pay Balance
@@ -188,11 +196,13 @@ function BillHistoryRow({
   bill,
   expanded,
   onToggle,
+  payTargetBill,
   onPayBalance,
 }: {
   bill: Bill;
   expanded: boolean;
   onToggle: () => void;
+  payTargetBill?: Bill | null;
   onPayBalance?: (bill: Bill) => void;
 }) {
   return (
@@ -233,7 +243,11 @@ function BillHistoryRow({
       {expanded && (
         <tr>
           <td colSpan={6} className="p-0">
-            <BillDetailTable bill={bill} onPayBalance={onPayBalance} />
+            <BillDetailTable
+              bill={bill}
+              payTargetBill={payTargetBill}
+              onPayBalance={onPayBalance}
+            />
           </td>
         </tr>
       )}
@@ -258,6 +272,8 @@ export function BillingPreviewModal({
   const statementPeriod = formatStatementPeriodCompact(fromDate, toDate);
   // Pay oldest outstanding first (list itself stays newest → oldest).
   const payableBill = oldestUnpaidBill(bills) ?? bills[0] ?? null;
+  const billRowKey = (bill: Bill) =>
+    `${billingMonthKey(bill.billingMonth)}:${bill.billingMonth}:${bill.amountPaid}:${bill.totalDue}`;
 
   useEffect(() => {
     if (!open) {
@@ -265,7 +281,7 @@ export function BillingPreviewModal({
       return;
     }
     const focus = oldestUnpaidBill(bills) ?? bills[0] ?? null;
-    setExpandedBillId(focus?.id ?? null);
+    setExpandedBillId(focus ? billRowKey(focus) : null);
   }, [open, bills]);
 
   useEffect(() => {
@@ -387,19 +403,23 @@ export function BillingPreviewModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {bills.map((bill) => (
+                    {bills.map((bill) => {
+                      const rowKey = billRowKey(bill);
+                      return (
                       <BillHistoryRow
-                        key={bill.id}
+                        key={rowKey}
                         bill={bill}
-                        expanded={expandedBillId === bill.id}
+                        expanded={expandedBillId === rowKey}
                         onToggle={() =>
                           setExpandedBillId((current) =>
-                            current === bill.id ? null : bill.id,
+                            current === rowKey ? null : rowKey,
                           )
                         }
+                        payTargetBill={payableBill}
                         onPayBalance={onPayBalance}
                       />
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -71,6 +71,13 @@ function parseBillingMonthDate(month: string): Date | null {
 
 /** Calendar month key (YYYY-MM) for comparing billing sheet month values. */
 export function billingMonthKey(month: string): string {
+  if (!month) return "";
+
+  // Prefer explicit calendar fields — avoids UTC shifts like
+  // 2026-07-31T16:00:00.000Z → August in UTC+8.
+  const iso = month.match(/^(\d{4})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}`;
+
   const parsed = parseBillingMonthDate(month);
   if (!parsed) return "";
 
@@ -87,12 +94,9 @@ export function billingMonthsMatch(a: string, b: string): boolean {
 
 /** Date input value (YYYY-MM-DD) for the first day of a billing month. */
 export function billingMonthToDateInput(month: string): string {
-  const parsed = parseBillingMonthDate(month);
-  if (!parsed) return "";
-
-  const year = parsed.getFullYear();
-  const monthIndex = String(parsed.getMonth() + 1).padStart(2, "0");
-  return `${year}-${monthIndex}-01`;
+  const key = billingMonthKey(month);
+  if (key) return `${key}-01`;
+  return "";
 }
 
 export function resolveBillingMonthValue(

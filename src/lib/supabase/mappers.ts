@@ -18,6 +18,7 @@ export interface DbTenantRow {
   deposit: number;
   notes: string;
   status: "Active" | "Vacant";
+  credit_balance?: number;
 }
 
 export interface DbBillingRow {
@@ -101,6 +102,7 @@ export function mapTenantRow(row: DbTenantRow): TenantRecord {
     Deposit: Number(row.deposit) || 0,
     Notes: row.notes ?? "",
     Status: row.status,
+    Credit: Number(row.credit_balance) || 0,
   };
 }
 

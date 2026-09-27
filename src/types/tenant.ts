@@ -12,6 +12,8 @@ export interface TenantRecord {
   Deposit: number;
   Notes: string;
   Status: string;
+  /** Overpayment carried over to the next bill (Supabase only). */
+  Credit?: number;
 }
 
 export type TenantStatus = "Active" | "Vacant";

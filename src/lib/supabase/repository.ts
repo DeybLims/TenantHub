@@ -1,4 +1,5 @@
 import { billingMonthKey } from "@/lib/months";
+import { roundCurrency } from "@/lib/propertyBillingCalculations";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ExpenseRecord } from "@/components/expenses/types";
 import {
@@ -278,6 +279,7 @@ export async function saveSupabaseTenant(
         deposit: 0,
         notes: "",
         status: "Vacant",
+        credit_balance: 0,
       })
       .eq("room", room);
 
@@ -316,6 +318,7 @@ export async function saveSupabaseTenant(
     deposit: Number(data.deposit ?? current?.deposit ?? 0) || 0,
     notes: data.notes ?? current?.notes ?? "",
     status: "Active" as const,
+    ...(wasVacant || isDifferentOccupant ? { credit_balance: 0 } : {}),
   };
 
   const { error } = await supabase.from("tenants").upsert(payload, {
@@ -372,7 +375,7 @@ export async function generateSupabaseBill(
   const totalDue =
     Number(data.rent) + eBill + wBill + Number(data.adjustment || 0);
 
-  const { error } = await supabase.from("billing_records").insert({
+  const { data: inserted, error } = await supabase.from("billing_records").insert({
     billing_month: billingMonth,
     room,
     rent: Number(data.rent) || 0,
@@ -389,14 +392,87 @@ export async function generateSupabaseBill(
     paid: 0,
     date_paid: null,
     status: "Unpaid",
-  });
+  })
+    .select("id")
+    .single();
 
   if (error) throw new Error(error.message);
 
+  const creditApplied = await applyTenantCreditToBill(
+    room,
+    (inserted as { id: string }).id,
+    roundCurrency(totalDue),
+  );
+
   return {
     success: true,
-    message: "Calculated invoice generated and logged.",
+    message:
+      creditApplied > 0
+        ? `Calculated invoice generated. ₱${creditApplied.toLocaleString("en-PH", { minimumFractionDigits: 2 })} credit applied.`
+        : "Calculated invoice generated and logged.",
   };
+}
+
+async function readTenantCredit(room: number): Promise<number> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("tenants")
+    .select("credit_balance")
+    .eq("room", room)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return roundCurrency(Number((data as { credit_balance?: number } | null)?.credit_balance) || 0);
+}
+
+async function setTenantCredit(room: number, credit: number): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("tenants")
+    .update({ credit_balance: roundCurrency(Math.max(0, credit)) })
+    .eq("room", room);
+
+  if (error) throw new Error(error.message);
+}
+
+/** Pays a newly generated bill from the tenant's credit. Returns the amount applied. */
+async function applyTenantCreditToBill(
+  room: number,
+  billingId: string,
+  totalDue: number,
+): Promise<number> {
+  const credit = await readTenantCredit(room);
+  if (credit <= 0 || totalDue <= 0) return 0;
+
+  const applied = roundCurrency(Math.min(credit, totalDue));
+  const today = new Date().toISOString().slice(0, 10);
+  const supabase = getSupabaseAdmin();
+
+  const { error } = await supabase
+    .from("billing_records")
+    .update({
+      paid: applied,
+      status: applied >= totalDue ? "Paid" : "Partial",
+      date_paid: today,
+    })
+    .eq("id", billingId);
+  if (error) throw new Error(error.message);
+
+  const { error: activityError } = await supabase
+    .from("payment_activities")
+    .insert({
+      billing_record_id: billingId,
+      payment_date: today,
+      amount: applied,
+      method: "other",
+      reference_notes: "Credit from previous overpayment",
+    });
+  if (activityError) {
+    console.warn("payment_activities insert:", activityError.message);
+  }
+
+  await setTenantCredit(room, credit - applied);
+  return applied;
 }
 
 export async function updateSupabaseBill(
@@ -458,6 +534,11 @@ export async function updateSupabaseBill(
     .eq("id", existing.id);
 
   if (error) throw new Error(error.message);
+
+  const creditToTenant = roundCurrency(Number(data.creditToTenant) || 0);
+  if (creditToTenant > 0) {
+    await setTenantCredit(room, (await readTenantCredit(room)) + creditToTenant);
+  }
 
   if (data.paymentActivity && data.paymentActivity.amount > 0) {
     const method =

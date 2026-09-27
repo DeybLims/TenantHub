@@ -34,7 +34,7 @@ import {
   getMockBillingRows,
   getMockTenants,
 } from "@/services/api";
-import type { Bill, BillingTableRow } from "@/types/billing";
+import type { BillingTableRow } from "@/types/billing";
 import type { TenantRecord } from "@/types/tenant";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
@@ -112,7 +112,6 @@ export function BillingPage() {
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isPayBalanceOpen, setIsPayBalanceOpen] = useState(false);
-  const [payBalanceBill, setPayBalanceBill] = useState<Bill | null>(null);
   const [selectedRow, setSelectedRow] = useState<BillingTableRow | null>(null);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -201,6 +200,18 @@ export function BillingPage() {
       toDate || undefined,
     );
   }, [billingRows, tenants, selectedRow, fromDate, toDate]);
+
+  // Payments ignore the date filter so older unpaid bills are still cleared first.
+  const occupantBills = useMemo(() => {
+    if (!selectedRow) return [];
+    const tenant = tenants.find((item) => item.Room === selectedRow.room);
+    return buildBillsForRoom(
+      billingRows,
+      tenants,
+      selectedRow.room,
+      tenantOccupancyFromDate(tenant) || undefined,
+    );
+  }, [billingRows, tenants, selectedRow]);
 
   // Statement Period always matches the Billing page Date Range filter.
   const statementRange = useMemo(
@@ -328,6 +339,7 @@ export function BillingPage() {
 
   const handleBillGenerated = () => {
     void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
+    void queryClient.invalidateQueries({ queryKey: ["tenants"] });
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
@@ -340,16 +352,15 @@ export function BillingPage() {
     setIsPreviewOpen(false);
   };
 
-  const handlePayBalance = (bill: Bill) => {
-    setPayBalanceBill(bill);
+  const handlePayBalance = () => {
     setIsPayBalanceOpen(true);
   };
 
   const handlePayBalanceSuccess = () => {
     void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
+    void queryClient.invalidateQueries({ queryKey: ["tenants"] });
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     setIsPayBalanceOpen(false);
-    setPayBalanceBill(null);
   };
 
   const handleExportSelected = () => {
@@ -432,6 +443,9 @@ export function BillingPage() {
         open={isPreviewOpen && selectedRow != null}
         tenantName={selectedRow?.tenantName ?? ""}
         unitCode={selectedRow?.unitCode ?? ""}
+        creditBalance={
+          tenants.find((item) => item.Room === selectedRow?.room)?.Credit ?? 0
+        }
         bills={tenantBills}
         fromDate={statementRange.from}
         toDate={statementRange.to}
@@ -442,13 +456,8 @@ export function BillingPage() {
 
       <PayBalanceModal
         open={isPayBalanceOpen}
-        bill={payBalanceBill}
-        fromDate={statementRange.from}
-        toDate={statementRange.to}
-        onClose={() => {
-          setIsPayBalanceOpen(false);
-          setPayBalanceBill(null);
-        }}
+        bills={occupantBills}
+        onClose={() => setIsPayBalanceOpen(false)}
         onSuccess={handlePayBalanceSuccess}
       />
     </AppShell>

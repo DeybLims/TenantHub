@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Banknote,
   Building2,
@@ -13,10 +13,14 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { formatPesoDecimal } from "@/lib/format";
 import {
+  allocatePaymentAcrossBills,
   billUserNotes,
   formatStatementPeriodCompact,
+  unpaidBillsOldestFirst,
+  type PaymentAllocation,
 } from "@/lib/mapBillingViewModel";
-import { billingMonthToDateInput } from "@/lib/months";
+import { billingMonthToDateInput, formatMonthLabel } from "@/lib/months";
+import { roundCurrency } from "@/lib/propertyBillingCalculations";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import { updateBill } from "@/services/api";
 import type { Bill, UpdateBillPayload } from "@/types/billing";
@@ -36,9 +40,8 @@ export type PaymentMethod = "cash" | "bank" | "online";
 
 export interface PayBalanceModalProps {
   open: boolean;
-  bill: Bill | null;
-  fromDate: string;
-  toDate: string;
+  /** Every bill for the current occupant; unpaid ones are paid oldest-first. */
+  bills: Bill[];
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -130,42 +133,78 @@ function buildPaymentPayload(
 
 export function PayBalanceModal({
   open,
-  bill,
-  fromDate,
-  toDate,
+  bills,
   onClose,
   onSuccess,
 }: PayBalanceModalProps) {
+  const queryClient = useQueryClient();
   const [paymentDate, setPaymentDate] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("bank");
   const [reference, setReference] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const outstanding = bill?.balance ?? 0;
-  const statementPeriod = formatStatementPeriodCompact(fromDate, toDate);
+  const unpaidBills = useMemo(() => unpaidBillsOldestFirst(bills), [bills]);
+  const outstanding = roundCurrency(
+    unpaidBills.reduce((sum, item) => sum + item.balance, 0),
+  );
+  const oldestBalance = unpaidBills[0]?.balance ?? 0;
+  const statementPeriod = formatStatementPeriodCompact(
+    billingMonthToDateInput(unpaidBills[0]?.billingMonth ?? ""),
+    billingMonthToDateInput(unpaidBills.at(-1)?.billingMonth ?? ""),
+  );
 
   useEffect(() => {
     if (!open) return;
     // Prefer plain numeric text so "Proceed" stays enabled without comma-parse issues.
     setPaymentDate(new Date().toISOString().slice(0, 10));
-    setAmount(outstanding > 0 ? outstanding.toFixed(2) : "");
+    setAmount(oldestBalance > 0 ? oldestBalance.toFixed(2) : "");
     setMethod("bank");
     setReference("");
     setError(null);
-  }, [open, outstanding]);
+  }, [open, oldestBalance]);
 
   const paymentAmount = readSheetNumber(amount);
-  const amountInvalid =
-    paymentAmount <= 0 || (bill != null && paymentAmount > bill.balance);
+  const amountInvalid = paymentAmount <= 0;
+  const carryOverCredit = roundCurrency(Math.max(0, paymentAmount - outstanding));
+
+  const allocations = useMemo(
+    () =>
+      amountInvalid ? [] : allocatePaymentAcrossBills(unpaidBills, paymentAmount),
+    [amountInvalid, unpaidBills, paymentAmount],
+  );
 
   const mutation = useMutation({
-    mutationFn: (payload: UpdateBillPayload) => updateBill(payload),
+    mutationFn: async ({
+      items,
+      credit,
+    }: {
+      items: PaymentAllocation[];
+      credit: number;
+    }) => {
+      for (const [index, item] of items.entries()) {
+        const isLast = index === items.length - 1;
+        const payload = buildPaymentPayload(
+          item.bill,
+          item.amount,
+          method,
+          isLast && credit > 0
+            ? `${reference.trim()} (+${formatPesoDecimal(credit)} carried over as credit)`.trim()
+            : reference,
+          paymentDate,
+        );
+        await updateBill(isLast && credit > 0 ? { ...payload, creditToTenant: credit } : payload);
+      }
+    },
     onSuccess: () => {
       onSuccess();
       onClose();
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => {
+      // Earlier bills in the batch may already be saved — refresh so the UI matches.
+      void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
+      setError(err.message);
+    },
   });
 
   useEffect(() => {
@@ -177,12 +216,10 @@ export function PayBalanceModal({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
-  const canSubmit = useMemo(
-    () => Boolean(bill && paymentDate && !amountInvalid && !mutation.isPending),
-    [amountInvalid, bill, mutation.isPending, paymentDate],
-  );
+  const canSubmit =
+    allocations.length > 0 && Boolean(paymentDate) && !mutation.isPending;
 
-  if (!open || !bill) return null;
+  if (!open || unpaidBills.length === 0) return null;
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -193,9 +230,7 @@ export function PayBalanceModal({
       return;
     }
 
-    mutation.mutate(
-      buildPaymentPayload(bill, paymentAmount, method, reference, paymentDate),
-    );
+    mutation.mutate({ items: allocations, credit: carryOverCredit });
   };
 
   return (
@@ -293,6 +328,47 @@ export function PayBalanceModal({
                 required
               />
             </div>
+            {allocations.length > 0 && (
+              <div className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  Applied to (oldest first)
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {allocations.map((item) => (
+                    <li
+                      key={item.bill.id}
+                      className="flex items-center justify-between gap-3 text-xs text-navy"
+                    >
+                      <span>{formatMonthLabel(item.bill.billingMonth)}</span>
+                      <span>
+                        {formatPesoDecimal(item.amount)}{" "}
+                        <span
+                          className={
+                            item.status === "Paid"
+                              ? "font-semibold text-emerald-600"
+                              : "font-semibold text-amber-600"
+                          }
+                        >
+                          {item.status === "Paid"
+                            ? "Paid"
+                            : `Partial (${formatPesoDecimal(
+                                roundCurrency(item.bill.totalDue - item.newPaid),
+                              )} left)`}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                  {carryOverCredit > 0 && (
+                    <li className="flex items-center justify-between gap-3 border-t border-gray-200 pt-1 text-xs text-navy">
+                      <span>Carry over (credit for next bill)</span>
+                      <span className="font-semibold text-blue-600">
+                        {formatPesoDecimal(carryOverCredit)}
+                      </span>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div>

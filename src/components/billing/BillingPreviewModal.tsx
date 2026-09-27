@@ -24,6 +24,8 @@ export interface BillingPreviewModalProps {
   open: boolean;
   tenantName: string;
   unitCode: string;
+  /** Overpayment credit that will be applied to the next generated bill. */
+  creditBalance?: number;
   bills: Bill[];
   fromDate: string;
   toDate: string;
@@ -259,6 +261,7 @@ export function BillingPreviewModal({
   open,
   tenantName,
   unitCode,
+  creditBalance = 0,
   bills,
   fromDate,
   toDate,
@@ -324,6 +327,11 @@ export function BillingPreviewModal({
                   <p className="text-sm text-gray-500">Unit: {unitCode}</p>
                 </div>
               </div>
+              {creditBalance > 0 && (
+                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
+                  Credit {formatPesoDecimal(creditBalance)} · applies to next bill
+                </span>
+              )}
             </div>
           </div>
 

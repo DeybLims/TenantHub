@@ -73,6 +73,9 @@ create table if not exists public.tenants (
   constraint tenants_room_unique unique (room)
 );
 
+alter table public.tenants
+  add column if not exists credit_balance numeric(12, 2) not null default 0;
+
 create index if not exists tenants_status_idx on public.tenants (status);
 create index if not exists tenants_unit_code_idx on public.tenants (unit_code);
 

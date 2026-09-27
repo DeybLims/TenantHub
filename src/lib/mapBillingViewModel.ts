@@ -229,8 +229,8 @@ export function buildBillsForRoom(
 }
 
 /** Oldest bill with an open balance — payments clear from earliest unpaid upward. */
-export function oldestUnpaidBill(bills: Bill[]): Bill | null {
-  const unpaid = [...bills]
+export function unpaidBillsOldestFirst(bills: Bill[]): Bill[] {
+  return [...bills]
     .filter((bill) => bill.balance > 0)
     .sort((a, b) => {
       const keyA = billingMonthKey(a.billingMonth);
@@ -240,7 +240,41 @@ export function oldestUnpaidBill(bills: Bill[]): Bill | null {
         new Date(a.billingMonth).getTime() - new Date(b.billingMonth).getTime()
       );
     });
-  return unpaid[0] ?? null;
+}
+
+export function oldestUnpaidBill(bills: Bill[]): Bill | null {
+  return unpaidBillsOldestFirst(bills)[0] ?? null;
+}
+
+export interface PaymentAllocation {
+  bill: Bill;
+  amount: number;
+  newPaid: number;
+  status: BillPaymentStatus;
+}
+
+/** Applies a payment to unpaid bills oldest-first; any excess carries to the next bill. */
+export function allocatePaymentAcrossBills(
+  bills: Bill[],
+  paymentAmount: number,
+): PaymentAllocation[] {
+  let remaining = roundCurrency(paymentAmount);
+  const allocations: PaymentAllocation[] = [];
+
+  for (const bill of unpaidBillsOldestFirst(bills)) {
+    if (remaining <= 0) break;
+    const amount = roundCurrency(Math.min(remaining, bill.balance));
+    const newPaid = roundCurrency(bill.amountPaid + amount);
+    allocations.push({
+      bill,
+      amount,
+      newPaid,
+      status: newPaid >= bill.totalDue ? "Paid" : "Partial",
+    });
+    remaining = roundCurrency(remaining - amount);
+  }
+
+  return allocations;
 }
 
 /**

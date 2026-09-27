@@ -123,6 +123,8 @@ export interface UpdateBillPayload {
     reference?: string;
     paymentDate: string;
   };
+  /** Overpayment beyond every unpaid bill, added to the tenant's credit balance. */
+  creditToTenant?: number;
 }
 
 export interface BillingDetailSaveData {

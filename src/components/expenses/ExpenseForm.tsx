@@ -22,9 +22,10 @@ interface ExpenseFormProps {
   derived: UtilityExpenseDerived;
   onRecordChange: (patch: Partial<ExpenseRecord>) => void;
   onCancel: () => void;
-  onSave: () => void;
+  onSave: () => Promise<void> | void;
   onExportPdf: () => void;
   isDirty?: boolean;
+  isSaving?: boolean;
 }
 
 const inputClass = `${floatingInputClass} text-navy`;
@@ -200,8 +201,10 @@ export function ExpenseForm({
   onSave,
   onExportPdf,
   isDirty = false,
+  isSaving = false,
 }: ExpenseFormProps) {
   const [showSavedToast, setShowSavedToast] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [elecTouched, setElecTouched] =
     useState<ConsumptionTouched>(EMPTY_TOUCHED);
   const [waterTouched, setWaterTouched] =
@@ -233,9 +236,16 @@ export function ExpenseForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record.billingMonth]);
 
-  const handleSave = () => {
-    onSave();
-    setShowSavedToast(true);
+  const handleSave = async () => {
+    setSaveError(null);
+    try {
+      await onSave();
+      setShowSavedToast(true);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to save changes.",
+      );
+    }
   };
 
   const applyElecParts = (
@@ -672,25 +682,38 @@ export function ExpenseForm({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
-        {showSavedToast && (
+        {showSavedToast && !saveError && (
           <p className="mr-auto text-sm font-medium text-emerald-600">
             Changes saved
           </p>
         )}
+        {saveError && (
+          <p className="mr-auto text-sm font-medium text-red-500" role="alert">
+            {saveError}
+          </p>
+        )}
         <button
           type="button"
-          onClick={onCancel}
-          disabled={!isDirty}
+          onClick={() => {
+            setSaveError(null);
+            onCancel();
+          }}
+          disabled={!isDirty || isSaving}
           className="text-sm font-semibold text-blue-500 hover:text-blue-600 disabled:opacity-40"
         >
           Cancel
         </button>
         <button
           type="button"
-          onClick={handleSave}
-          className="rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-600"
+          onClick={() => void handleSave()}
+          disabled={isSaving}
+          className="rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {showSavedToast && !isDirty ? "Saved" : "Save Changes"}
+          {isSaving
+            ? "Saving..."
+            : showSavedToast && !isDirty
+              ? "Saved"
+              : "Save Changes"}
         </button>
         <button
           type="button"

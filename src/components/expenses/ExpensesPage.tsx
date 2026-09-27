@@ -62,6 +62,9 @@ export function ExpensesPage() {
     save,
     cancel,
     isDirty,
+    isSaving,
+    isLoading: isExpenseLoading,
+    loadError: expenseLoadError,
   } = useUtilityExpenseAnalytics({
     selectedMonth,
     billingRows,
@@ -78,9 +81,11 @@ export function ExpensesPage() {
     });
   };
 
-  const isLoading = billingQuery.isLoading || tenantsQuery.isLoading;
-  const isError = billingQuery.isError || tenantsQuery.isError;
-  const error = billingQuery.error ?? tenantsQuery.error;
+  const isLoading =
+    billingQuery.isLoading || tenantsQuery.isLoading || isExpenseLoading;
+  const isError =
+    billingQuery.isError || tenantsQuery.isError || Boolean(expenseLoadError);
+  const error = billingQuery.error ?? tenantsQuery.error ?? expenseLoadError;
 
   return (
     <AppShell>
@@ -134,6 +139,7 @@ export function ExpensesPage() {
             onSave={save}
             onExportPdf={handleExportPdf}
             isDirty={isDirty}
+            isSaving={isSaving}
           />
 
           <CalculatedAnalytics analytics={analytics} />

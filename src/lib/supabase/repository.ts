@@ -1,12 +1,16 @@
 import { billingMonthKey } from "@/lib/months";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import type { ExpenseRecord } from "@/components/expenses/types";
 import {
   billingRowsMatchMonth,
   mapBillingRow,
   mapTenantRow,
+  mapUtilityExpenseRow,
   sheetMonthToBillingDate,
+  utilityExpenseRecordToRow,
   type DbBillingRow,
   type DbTenantRow,
+  type DbUtilityExpenseRow,
 } from "@/lib/supabase/mappers";
 import type { GenerateBillPayload, UpdateBillPayload } from "@/types/billing";
 import type { SheetRow } from "@/types/sheet";
@@ -55,6 +59,40 @@ export async function fetchSupabaseTenants(): Promise<TenantRecord[]> {
   }
 
   return (data as DbTenantRow[]).map(mapTenantRow);
+}
+
+export async function fetchSupabaseUtilityExpense(
+  month: string,
+): Promise<ExpenseRecord | null> {
+  if (!billingMonthKey(month)) return null;
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("utility_expenses")
+    .select("*")
+    .eq("billing_month", sheetMonthToBillingDate(month))
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  return mapUtilityExpenseRow(data as DbUtilityExpenseRow, month);
+}
+
+export async function saveSupabaseUtilityExpense(
+  record: ExpenseRecord,
+): Promise<ApiResult> {
+  if (!billingMonthKey(record.billingMonth)) {
+    return { success: false, message: "Billing month is required." };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("utility_expenses")
+    .upsert(utilityExpenseRecordToRow(record), { onConflict: "billing_month" });
+
+  if (error) return { success: false, message: error.message };
+  return { success: true, message: "Utility expenses saved." };
 }
 
 export async function fetchSupabaseBillingRows(

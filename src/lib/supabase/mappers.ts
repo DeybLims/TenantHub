@@ -1,3 +1,4 @@
+import type { ExpenseRecord } from "@/components/expenses/types";
 import { billingMonthKey } from "@/lib/months";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
@@ -40,6 +41,27 @@ export interface DbBillingRow {
   due_date: string | null;
   notes: string;
   status: "Paid" | "Unpaid" | "Partial" | "Vacant";
+}
+
+export interface DbUtilityExpenseRow {
+  billing_month: string;
+  meralco_total_consumption_kwh: number;
+  electricity_charge_rate: number;
+  jjc_consumption_kwh: number;
+  apartment_consumption_kwh: number;
+  motor_consumption_kwh: number;
+  electricity_motor_rate: number;
+  meralco_bill_amount: number;
+  meralco_paid_this_month: number;
+  miwd_total_consumption_m3: number;
+  water_charge_rate: number;
+  miwd_residential_m3: number;
+  miwd_commercial_m3: number;
+  pumped_water_charge_m3: number;
+  water_motor_rate: number;
+  miwd_bill_amount: number;
+  miwd_paid_this_month: number;
+  miwd_special_rate: number;
 }
 
 /** Postgres date → Month string the UI expects (matches Google Sheets formats). */
@@ -104,6 +126,57 @@ export function mapBillingRow(row: DbBillingRow): SheetRow {
     DueDate: row.due_date,
     Notes: row.notes || null,
     Status: row.status,
+  };
+}
+
+export function mapUtilityExpenseRow(
+  row: DbUtilityExpenseRow,
+  month: string,
+): ExpenseRecord {
+  return {
+    billingMonth: month,
+    meralcoTotalConsumptionKwh: Number(row.meralco_total_consumption_kwh) || 0,
+    electricityChargeRate: Number(row.electricity_charge_rate) || 0,
+    jjcConsumptionKwh: Number(row.jjc_consumption_kwh) || 0,
+    apartmentConsumptionKwh: Number(row.apartment_consumption_kwh) || 0,
+    motorConsumptionKwh: Number(row.motor_consumption_kwh) || 0,
+    electricityMotorRate: Number(row.electricity_motor_rate) || 0,
+    meralcoBillAmount: Number(row.meralco_bill_amount) || 0,
+    meralcoPaidThisMonth: Number(row.meralco_paid_this_month) || 0,
+    miwdTotalConsumptionM3: Number(row.miwd_total_consumption_m3) || 0,
+    waterChargeRate: Number(row.water_charge_rate) || 0,
+    miwdResidentialM3: Number(row.miwd_residential_m3) || 0,
+    miwdCommercialM3: Number(row.miwd_commercial_m3) || 0,
+    pumpedWaterChargeM3: Number(row.pumped_water_charge_m3) || 0,
+    waterMotorRate: Number(row.water_motor_rate) || 0,
+    miwdBillAmount: Number(row.miwd_bill_amount) || 0,
+    miwdPaidThisMonth: Number(row.miwd_paid_this_month) || 0,
+    miwdSpecialRate: Number(row.miwd_special_rate) || 30,
+  };
+}
+
+export function utilityExpenseRecordToRow(
+  record: ExpenseRecord,
+): DbUtilityExpenseRow {
+  return {
+    billing_month: sheetMonthToBillingDate(record.billingMonth),
+    meralco_total_consumption_kwh: record.meralcoTotalConsumptionKwh,
+    electricity_charge_rate: record.electricityChargeRate,
+    jjc_consumption_kwh: record.jjcConsumptionKwh,
+    apartment_consumption_kwh: record.apartmentConsumptionKwh,
+    motor_consumption_kwh: record.motorConsumptionKwh,
+    electricity_motor_rate: record.electricityMotorRate,
+    meralco_bill_amount: record.meralcoBillAmount,
+    meralco_paid_this_month: record.meralcoPaidThisMonth,
+    miwd_total_consumption_m3: record.miwdTotalConsumptionM3,
+    water_charge_rate: record.waterChargeRate,
+    miwd_residential_m3: record.miwdResidentialM3,
+    miwd_commercial_m3: record.miwdCommercialM3,
+    pumped_water_charge_m3: record.pumpedWaterChargeM3,
+    water_motor_rate: record.waterMotorRate,
+    miwd_bill_amount: record.miwdBillAmount,
+    miwd_paid_this_month: record.miwdPaidThisMonth,
+    miwd_special_rate: record.miwdSpecialRate,
   };
 }
 

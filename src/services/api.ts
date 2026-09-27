@@ -12,6 +12,7 @@ import {
 } from "@/lib/transformSheetData";
 import type { GenerateBillPayload, UpdateBillPayload } from "@/types/billing";
 import type { DashboardData } from "@/types/dashboard";
+import type { ExpenseRecord as UtilityExpenseRecord } from "@/components/expenses/types";
 import type { SaveExpensePayload, ExpenseRecord } from "@/types/expense";
 import type {
   AssignTenantPayload,
@@ -376,6 +377,65 @@ export async function saveExpense(data: SaveExpensePayload): Promise<void> {
 }
 
 export { getMockExpenses };
+
+export interface UtilityExpenseResponse {
+  /** False when the server has no Supabase connection (browser storage is used instead). */
+  configured: boolean;
+  record: UtilityExpenseRecord | null;
+}
+
+export async function fetchUtilityExpense(
+  month: string,
+): Promise<UtilityExpenseResponse> {
+  if (USE_MOCK) return { configured: false, record: null };
+
+  const params = new URLSearchParams({ month });
+  const response = await fetch(`/api/utility-expenses?${params.toString()}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  const body = (await response.json().catch(() => null)) as
+    | (UtilityExpenseResponse & { error?: string })
+    | null;
+
+  if (!response.ok || !body) {
+    throw new Error(
+      body?.error ??
+        `Failed to fetch utility expenses: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return { configured: body.configured, record: body.record };
+}
+
+export async function saveUtilityExpense(
+  record: UtilityExpenseRecord,
+): Promise<void> {
+  const response = await fetch("/api/utility-expenses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ data: record }),
+  });
+
+  const body = (await response.json().catch(() => null)) as {
+    error?: string;
+    message?: string;
+    success?: boolean;
+  } | null;
+
+  if (!response.ok || body?.success === false) {
+    throw new Error(
+      body?.error ??
+        body?.message ??
+        `Failed to save utility expenses: ${response.status} ${response.statusText}`,
+    );
+  }
+}
 
 function normalizeDashboardData(
   data: unknown,

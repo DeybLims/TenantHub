@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   defaultExpenseRecord,
@@ -19,6 +20,8 @@ import {
   allocatePaymentToUtilityBills,
   isBillingFullyPaid,
 } from "@/lib/paymentAllocation";
+import { billingMonthKey } from "@/lib/months";
+import { fetchUtilityExpense, saveUtilityExpense } from "@/services/api";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
 
@@ -236,22 +239,32 @@ function migrateLegacyRecord(
   };
 }
 
-function loadExpenseRecord(month: string): ExpenseRecord {
-  if (typeof window === "undefined") return defaultExpenseRecord(month);
+function loadLocalExpenseRecord(month: string): ExpenseRecord | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw =
       localStorage.getItem(expenseRecordStorageKey(month)) ??
       localStorage.getItem(`utility-provider:${month}`);
-    if (!raw) return defaultExpenseRecord(month);
+    if (!raw) return null;
     return migrateLegacyRecord(month, JSON.parse(raw) as Record<string, unknown>);
   } catch {
-    return defaultExpenseRecord(month);
+    return null;
   }
 }
 
-function saveExpenseRecord(month: string, record: ExpenseRecord): void {
+function saveLocalExpenseRecord(month: string, record: ExpenseRecord): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(expenseRecordStorageKey(month), JSON.stringify(record));
+}
+
+function clearLocalExpenseRecord(month: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(expenseRecordStorageKey(month));
+  localStorage.removeItem(`utility-provider:${month}`);
+}
+
+function utilityExpenseQueryKey(month: string) {
+  return ["utility-expense", billingMonthKey(month) || month] as const;
 }
 
 function allocatedUtilityPaid(
@@ -293,13 +306,46 @@ export function useUtilityExpenseAnalytics({
   const [savedSnapshot, setSavedSnapshot] = useState<ExpenseRecord>(() =>
     defaultExpenseRecord(selectedMonth),
   );
+  const [isSaving, setIsSaving] = useState(false);
+
+  const queryClient = useQueryClient();
+  const storedQuery = useQuery({
+    queryKey: utilityExpenseQueryKey(selectedMonth),
+    queryFn: () => fetchUtilityExpense(selectedMonth),
+    enabled: Boolean(selectedMonth),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+  const stored = storedQuery.data;
+  const usesSupabase = stored?.configured ?? false;
 
   useEffect(() => {
     if (!selectedMonth) return;
-    const loaded = loadExpenseRecord(selectedMonth);
-    setRecord(loaded);
-    setSavedSnapshot(loaded);
-  }, [selectedMonth]);
+    if (!stored) {
+      const empty = defaultExpenseRecord(selectedMonth);
+      setRecord(empty);
+      setSavedSnapshot(empty);
+      return;
+    }
+
+    if (!stored.configured) {
+      const local =
+        loadLocalExpenseRecord(selectedMonth) ??
+        defaultExpenseRecord(selectedMonth);
+      setRecord(local);
+      setSavedSnapshot(local);
+      return;
+    }
+
+    const saved = stored.record ?? defaultExpenseRecord(selectedMonth);
+    // Values typed before expenses moved to Supabase show as unsaved changes
+    // so they can be saved to the database or discarded with Cancel.
+    const legacyDraft = stored.record
+      ? null
+      : loadLocalExpenseRecord(selectedMonth);
+    setSavedSnapshot(saved);
+    setRecord(legacyDraft ?? saved);
+  }, [selectedMonth, stored]);
 
   const updateRecord = useCallback((patch: Partial<ExpenseRecord>) => {
     setRecord((current) => ({ ...current, ...patch }));
@@ -405,20 +451,37 @@ export function useUtilityExpenseAnalytics({
     };
   }, [sheetAnalytics, record, derived]);
 
-  const save = useCallback(() => {
+  const save = useCallback(async () => {
     if (!selectedMonth) return;
     const toSave = {
       ...record,
       billingMonth: selectedMonth,
     };
-    saveExpenseRecord(selectedMonth, toSave);
-    setRecord(toSave);
-    setSavedSnapshot(toSave);
-  }, [record, selectedMonth]);
+
+    setIsSaving(true);
+    try {
+      if (usesSupabase) {
+        await saveUtilityExpense(toSave);
+        clearLocalExpenseRecord(selectedMonth);
+        queryClient.setQueryData(utilityExpenseQueryKey(selectedMonth), {
+          configured: true,
+          record: toSave,
+        });
+        void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      } else {
+        saveLocalExpenseRecord(selectedMonth, toSave);
+      }
+      setRecord(toSave);
+      setSavedSnapshot(toSave);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [record, selectedMonth, usesSupabase, queryClient]);
 
   const cancel = useCallback(() => {
+    if (usesSupabase && selectedMonth) clearLocalExpenseRecord(selectedMonth);
     setRecord(savedSnapshot);
-  }, [savedSnapshot]);
+  }, [savedSnapshot, usesSupabase, selectedMonth]);
 
   const isDirty = useMemo(
     () => JSON.stringify(record) !== JSON.stringify(savedSnapshot),
@@ -433,5 +496,8 @@ export function useUtilityExpenseAnalytics({
     save,
     cancel,
     isDirty,
+    isSaving,
+    isLoading: storedQuery.isLoading,
+    loadError: storedQuery.error,
   };
 }

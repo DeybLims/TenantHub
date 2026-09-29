@@ -33,6 +33,8 @@ function calcTrueRate(amount: number, consumption: number): number {
 /**
  * Rate priority: explicit charge rate → master bill ÷ consumption → selling default.
  * Total consumption: explicit total field, else sum of parts.
+ * Electricity counts JJC + Tenant + Motor; the motor kWh × electricity rate is
+ * also shown under water as the pumped water charge.
  */
 function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
   const partsSum = roundCurrency(
@@ -53,10 +55,7 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
         ? calcTrueRate(meralcoMasterBill, meralcoTotalConsumption)
         : ELECTRICITY_SELLING_RATE;
 
-  const motorElecRate =
-    record.electricityMotorRate > 0
-      ? record.electricityMotorRate
-      : meralcoRate;
+  const motorElecRate = meralcoRate;
 
   const jjcCalculatedAmount = roundCurrency(
     record.jjcConsumptionKwh * meralcoRate,
@@ -72,9 +71,7 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
   const computedMeralcoMasterBill = meralcoMasterBill;
 
   const waterPartsSum = roundCurrency(
-    record.miwdResidentialM3 +
-      record.miwdCommercialM3 +
-      record.pumpedWaterChargeM3,
+    record.miwdResidentialM3 + record.miwdCommercialM3,
   );
   const miwdTotalConsumption =
     record.miwdTotalConsumptionM3 > 0
@@ -89,18 +86,13 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
         ? calcTrueRate(miwdMasterBill, miwdTotalConsumption)
         : WATER_RATE_STANDARD;
 
-  const waterMotorRate =
-    record.waterMotorRate > 0 ? record.waterMotorRate : miwdRate;
-
   const miwdResidentialAmount = roundCurrency(
     record.miwdResidentialM3 * miwdRate,
   );
   const miwdCommercialAmount = roundCurrency(
     record.miwdCommercialM3 * miwdRate,
   );
-  const pumpedWaterAmount = roundCurrency(
-    record.pumpedWaterChargeM3 * waterMotorRate,
-  );
+  const pumpedWaterAmount = motorCalculatedAmount;
 
   // MIWD master bill is the peso amount from the water bill — not m³ × rate.
   const computedMiwdMasterBill = miwdMasterBill;
@@ -112,14 +104,10 @@ function deriveRates(record: ExpenseRecord): UtilityExpenseDerived {
     motorCalculatedAmount,
     apartmentCalculatedAmount,
     computedMeralcoMasterBill,
-    meralcoBalance: roundCurrency(
-      computedMeralcoMasterBill - record.meralcoPaidThisMonth,
-    ),
+    meralcoBalance: computedMeralcoMasterBill,
     miwdTrueRate: roundCurrency(miwdRate),
     miwdTotalConsumption,
-    miwdBalance: roundCurrency(
-      computedMiwdMasterBill - record.miwdPaidThisMonth,
-    ),
+    miwdBalance: roundCurrency(computedMiwdMasterBill + pumpedWaterAmount),
     electricitySellingRate: ELECTRICITY_SELLING_RATE,
     miwdResidentialAmount,
     miwdCommercialAmount,
@@ -198,9 +186,7 @@ function migrateLegacyRecord(
   const partsElecTotal = roundCurrency(
     jjcConsumptionKwh + apartmentConsumptionKwh + motorConsumptionKwh,
   );
-  const waterPartsTotal = roundCurrency(
-    miwdResidentialM3 + miwdCommercialM3 + pumpedWaterChargeM3,
-  );
+  const waterPartsTotal = roundCurrency(miwdResidentialM3 + miwdCommercialM3);
 
   return {
     ...base,

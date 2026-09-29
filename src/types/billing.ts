@@ -94,6 +94,13 @@ export interface GenerateBillPayload {
   wCurr: number;
   wRate: number;
   adjustment: number;
+  /** YYYY-MM-DD */
+  billingDate?: string;
+  /** YYYY-MM-DD */
+  dueDate?: string;
+  /** Paid when the bill is created; any excess over Total Due becomes tenant credit. */
+  paid?: number;
+  notes?: string;
 }
 
 export interface UpdateBillPayload {

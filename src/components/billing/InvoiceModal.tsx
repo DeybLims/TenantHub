@@ -9,6 +9,11 @@ import {
 } from "@/lib/billingMeters";
 import { hasBillForRoomMonth } from "@/lib/buildBillingRows";
 import {
+  buildBillsForRoom,
+  tenantOccupancyFromDate,
+} from "@/lib/mapBillingViewModel";
+import {
+  billingMonthKey,
   billingMonthToDateInput,
   formatMonthLabel,
   resolveBillingMonthValue,
@@ -39,7 +44,7 @@ interface InvoiceModalProps {
 const inputClass =
   "w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-navy focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
 
-const dateInputClass = `${inputClass} [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none`;
+const dateInputClass = inputClass;
 
 const readOnlyClass =
   "w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-navy";
@@ -154,6 +159,8 @@ export function InvoiceModal({
 
   const [unitCode, setUnitCode] = useState("");
   const [tenantName, setTenantName] = useState("");
+  /** Billing period as YYYY-MM (independent of the billing/due dates). */
+  const [billingMonth, setBillingMonth] = useState("");
   const [billingDate, setBillingDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [baseRent, setBaseRent] = useState("");
@@ -176,7 +183,7 @@ export function InvoiceModal({
     (tenant) => tenant.UnitCode === unitCode,
   );
 
-  const billingMonthForCheck = billingDate || selectedMonth;
+  const billingMonthForCheck = billingMonth ? `${billingMonth}-01` : "";
 
   const isDuplicate = useMemo(() => {
     if (!selectedTenant || !billingMonthForCheck) return false;
@@ -191,10 +198,13 @@ export function InvoiceModal({
 
   useEffect(() => {
     if (!open) return;
+    const initialMonth =
+      billingMonthKey(selectedMonth) || new Date().toISOString().slice(0, 7);
     const { billingDate: autoBillingDate, dueDate: autoDueDate } =
-      billingDatesForMonth(selectedMonth);
+      billingDatesForMonth(initialMonth);
     setUnitCode("");
     setTenantName("");
+    setBillingMonth(initialMonth);
     setBillingDate(autoBillingDate);
     setDueDate(autoDueDate);
     setBaseRent("");
@@ -222,9 +232,7 @@ export function InvoiceModal({
     setElectricitySpecial(false);
     setElectricityRate(ELECTRICITY_SELLING_RATE);
     setWaterSpecial(false);
-    setWaterRate(
-      getWaterSellingRate(selectedTenant.Room, billingDate || selectedMonth),
-    );
+    setWaterRate(getWaterSellingRate(selectedTenant.Room, billingMonthForCheck));
     setBaseRent(
       selectedTenant.Rent.toLocaleString("en-PH", {
         minimumFractionDigits: 2,
@@ -237,14 +245,32 @@ export function InvoiceModal({
     const { ePrev, wPrev } = getPreviousMeterReadings(
       billingRows,
       selectedTenant.Room,
+      billingMonthForCheck,
     );
     setElecPrev(String(ePrev));
     setWaterPrev(String(wPrev));
 
     requestAnimationFrame(() => elecCurrRef.current?.focus());
-    // intentionally omit billingRows/billingDate — room change only
+    // intentionally omit billingRows/billingMonth — room change only
     // eslint-disable-next-line react-hooks/exhaustive-deps -- room-scoped reset
   }, [open, selectedRoom]);
+
+  const handleBillingMonthChange = (value: string) => {
+    setBillingMonth(value);
+    if (!value) return;
+    const dates = billingDatesForMonth(value);
+    setBillingDate(dates.billingDate);
+    setDueDate(dates.dueDate);
+    if (selectedTenant) {
+      const { ePrev, wPrev } = getPreviousMeterReadings(
+        billingRows,
+        selectedTenant.Room,
+        `${value}-01`,
+      );
+      setElecPrev(String(ePrev));
+      setWaterPrev(String(wPrev));
+    }
+  };
 
   useEffect(() => {
     if (!selectedTenant) return;
@@ -294,7 +320,31 @@ export function InvoiceModal({
     [baseRent, calculatedElecBill, calculatedWaterBill, otherCharges],
   );
 
-  const balance = totalDue - readSheetNumber(amountPaid);
+  // Unpaid balance from this occupant's earlier bills — Amount Paid clears it first.
+  const previousBalance = useMemo(() => {
+    if (!selectedTenant) return 0;
+    const bills = buildBillsForRoom(
+      billingRows,
+      tenants,
+      selectedTenant.Room,
+      tenantOccupancyFromDate(selectedTenant) || undefined,
+    );
+    return roundCurrency(bills.reduce((sum, bill) => sum + bill.balance, 0));
+  }, [billingRows, tenants, selectedTenant]);
+
+  const totalOwed = roundCurrency(previousBalance + totalDue);
+  const paidNow = readSheetNumber(amountPaid);
+  const paidToNewBill = roundCurrency(
+    Math.min(totalDue, Math.max(0, paidNow - previousBalance)),
+  );
+  const tenantCredit = selectedTenant?.Credit ?? 0;
+  const creditToApply = roundCurrency(
+    Math.min(tenantCredit, Math.max(0, totalDue - paidToNewBill)),
+  );
+  const carryOverCredit = roundCurrency(Math.max(0, paidNow - totalOwed));
+  const balance = roundCurrency(
+    Math.max(0, totalOwed - paidNow - creditToApply),
+  );
 
   const elecReadingInvalid =
     !allowNegativeConsumption &&
@@ -326,7 +376,7 @@ export function InvoiceModal({
     setError(null);
 
     if (!billingMonthForCheck) {
-      setError("Set a billing date for this invoice.");
+      setError("Select the billing month for this invoice.");
       return;
     }
     if (!selectedTenant) {
@@ -361,6 +411,10 @@ export function InvoiceModal({
       wCurr: readSheetNumber(waterCurr),
       wRate: waterRate,
       adjustment: readSheetNumber(otherCharges),
+      billingDate: billingDate || undefined,
+      dueDate: dueDate || undefined,
+      paid: readSheetNumber(amountPaid),
+      notes: notes.trim() || undefined,
     });
   };
 
@@ -413,23 +467,37 @@ export function InvoiceModal({
                 className={readOnlyClass}
               />
             </div>
-            <div>
-              <FieldLabel>Billing Date</FieldLabel>
-              <input
-                type="date"
-                value={billingDate}
-                onChange={(event) => setBillingDate(event.target.value)}
-                className={dateInputClass}
-              />
-            </div>
-            <div>
-              <FieldLabel>Due Date</FieldLabel>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
-                className={dateInputClass}
-              />
+            <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <FieldLabel>Billing Month</FieldLabel>
+                <input
+                  type="month"
+                  value={billingMonth}
+                  onChange={(event) =>
+                    handleBillingMonthChange(event.target.value)
+                  }
+                  className={dateInputClass}
+                  required
+                />
+              </div>
+              <div>
+                <FieldLabel>Billing Date</FieldLabel>
+                <input
+                  type="date"
+                  value={billingDate}
+                  onChange={(event) => setBillingDate(event.target.value)}
+                  className={dateInputClass}
+                />
+              </div>
+              <div>
+                <FieldLabel>Due Date</FieldLabel>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(event) => setDueDate(event.target.value)}
+                  className={dateInputClass}
+                />
+              </div>
             </div>
           </div>
 
@@ -439,8 +507,8 @@ export function InvoiceModal({
               role="alert"
             >
               Invoice denied: Room {selectedTenant.Room} already has a bill for{" "}
-              {billingMonthLabel}. Change the billing date to a different month
-              to create a new invoice.
+              {billingMonthLabel}. Choose a different billing month to create a
+              new invoice.
             </div>
           )}
 
@@ -464,9 +532,10 @@ export function InvoiceModal({
                   <FieldLabel>Previous</FieldLabel>
                   <input
                     type="text"
-                    readOnly
+                    inputMode="decimal"
                     value={elecPrev}
-                    className={readOnlyClass}
+                    onChange={(event) => setElecPrev(event.target.value)}
+                    className={inputClass}
                   />
                 </div>
                 <div>
@@ -531,9 +600,10 @@ export function InvoiceModal({
                   <FieldLabel>Previous</FieldLabel>
                   <input
                     type="text"
-                    readOnly
+                    inputMode="decimal"
                     value={waterPrev}
-                    className={readOnlyClass}
+                    onChange={(event) => setWaterPrev(event.target.value)}
+                    className={inputClass}
                   />
                 </div>
                 <div>
@@ -591,16 +661,50 @@ export function InvoiceModal({
 
           <div className="space-y-4 border-t border-gray-200 pt-4">
             <CurrencyInput
-              label="Total Due"
+              label="Total Due This Month"
               value={formatAmount(totalDue)}
               readOnly
               valueClass="font-bold"
             />
+            {previousBalance > 0 && (
+              <>
+                <CurrencyInput
+                  label="Previous Balance"
+                  value={formatAmount(previousBalance)}
+                  readOnly
+                  valueClass="text-red-500"
+                />
+                <CurrencyInput
+                  label="Total Amount Owed"
+                  value={formatAmount(totalOwed)}
+                  readOnly
+                  valueClass="font-bold"
+                />
+              </>
+            )}
             <CurrencyInput
               label="Amount Paid"
               value={amountPaid}
               onChange={setAmountPaid}
             />
+            {previousBalance > 0 && paidNow > 0 && (
+              <p className="-mt-2 text-xs text-gray-500">
+                Applied to the previous balance first (oldest bill first), then
+                to this bill.
+              </p>
+            )}
+            {creditToApply > 0 && (
+              <p className="-mt-2 text-xs text-blue-600">
+                Tenant credit of ₱{formatAmount(creditToApply)} will be applied
+                to this bill.
+              </p>
+            )}
+            {carryOverCredit > 0 && (
+              <p className="-mt-2 text-xs text-blue-600">
+                ₱{formatAmount(carryOverCredit)} over the amount owed will be
+                carried over as credit for the next bill.
+              </p>
+            )}
             <CurrencyInput
               label="Balance"
               value={formatAmount(balance)}

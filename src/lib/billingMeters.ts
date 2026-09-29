@@ -1,4 +1,4 @@
-import { sortMonths } from "@/lib/months";
+import { billingMonthKey, sortMonths } from "@/lib/months";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import type { SheetRow } from "@/types/sheet";
 
@@ -8,14 +8,22 @@ function readRoom(room: number | string): number {
 }
 
 /**
- * Finds the most recent billing entry for a room across all months and returns
- * that bill's current meter readings as the starting previous readings.
+ * Finds the most recent billing entry for a room and returns that bill's current
+ * meter readings as the starting previous readings. With `beforeMonth`, only
+ * bills from earlier months count (for back-filling a missed month).
  */
 export function getPreviousMeterReadings(
   billingRows: SheetRow[],
   room: number,
+  beforeMonth?: string,
 ): { ePrev: number; wPrev: number } {
-  const roomRows = billingRows.filter((row) => readRoom(row.Room) === room);
+  const beforeKey = beforeMonth ? billingMonthKey(beforeMonth) : "";
+  const roomRows = billingRows.filter((row) => {
+    if (readRoom(row.Room) !== room) return false;
+    if (!beforeKey) return true;
+    const rowKey = billingMonthKey(String(row.Month));
+    return Boolean(rowKey) && rowKey < beforeKey;
+  });
   if (roomRows.length === 0) {
     return { ePrev: 0, wPrev: 0 };
   }

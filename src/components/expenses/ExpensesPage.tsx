@@ -44,15 +44,16 @@ export function ExpensesPage() {
 
   const tenants = useMemo(() => tenantsQuery.data ?? [], [tenantsQuery.data]);
 
-  const monthOptions = useMemo(
-    () => getBillingMonthOptions(billingRows),
-    [billingRows],
-  );
+  const monthOptions = useMemo(() => {
+    const options = getBillingMonthOptions(billingRows);
+    if (options.length > 0 || !selectedMonth) return options;
+    return [{ value: selectedMonth, label: selectedMonth }];
+  }, [billingRows, selectedMonth]);
 
   useEffect(() => {
-    if (!billingRows.length || selectedMonth) return;
+    if (!billingQuery.data || selectedMonth) return;
     setSelectedMonth(getDefaultBillingMonth(billingRows));
-  }, [billingRows, selectedMonth]);
+  }, [billingQuery.data, billingRows, selectedMonth]);
 
   const {
     record,

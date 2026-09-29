@@ -136,16 +136,20 @@ export function BillingPage() {
   );
 
   useEffect(() => {
-    if (!billingRows.length || billingAnchorMonth) return;
+    if (!billingQuery.data || billingAnchorMonth) return;
     const months = sortMonths([
       ...new Set(billingRows.map((row) => String(row.Month)).filter(Boolean)),
     ]);
-    const latest = String(months.at(-1) ?? "");
+    // No bills yet → anchor on the current month so the first bill can be generated.
+    const latest = String(
+      months.at(-1) ??
+        new Date().toLocaleString("en-US", { month: "long", year: "numeric" }),
+    );
     setBillingAnchorMonth(latest);
     const range = defaultDateRange(latest);
     setFromDate(range.from);
     setToDate(range.to);
-  }, [billingRows, billingAnchorMonth]);
+  }, [billingQuery.data, billingRows, billingAnchorMonth]);
 
   const billsInRange = useMemo(() => {
     if (!billingRows.length) return [];

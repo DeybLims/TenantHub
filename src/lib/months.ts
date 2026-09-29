@@ -27,6 +27,12 @@ export function formatMonthLabel(month: string): string {
   return month;
 }
 
+/** Current calendar month as a label, e.g. "September 2026". */
+export function currentMonthLabel(): string {
+  const now = new Date();
+  return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
+}
+
 export function monthChartLabel(month: string): string {
   if (isIsoMonth(month)) {
     return new Date(month).toLocaleString("en-US", { month: "short" });

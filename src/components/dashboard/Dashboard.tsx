@@ -90,7 +90,6 @@ export function Dashboard() {
       const waterActual =
         expenseAnalytics.derived.miwdResidentialAmount +
         expenseAnalytics.derived.miwdCommercialAmount +
-        expenseAnalytics.derived.pumpedWaterAmount +
         expenseAnalytics.waterMotorCost;
 
       const electricityRow = data.utilities.find(

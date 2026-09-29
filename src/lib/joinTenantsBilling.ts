@@ -1,4 +1,9 @@
-import { billingMonthsMatch, formatMonthLabel, sortMonths } from "@/lib/months";
+import {
+  billingMonthsMatch,
+  currentMonthLabel,
+  formatMonthLabel,
+  sortMonths,
+} from "@/lib/months";
 import { buildTenantBillingSummary } from "@/lib/tenantBillingSummary";
 import { buildTenantRowsForMonth } from "@/lib/tenantRooms";
 import type { MonthOption } from "@/types/dashboard";
@@ -58,9 +63,10 @@ export function getBillingMonthOptions(rows: SheetRow[]): MonthOption[] {
   }));
 }
 
+/** Latest billed month, or the current month when there are no bills yet. */
 export function getDefaultBillingMonth(rows: SheetRow[]): string {
   const months = getBillingMonthOptions(rows);
-  return months.at(-1)?.value ?? "";
+  return months.at(-1)?.value ?? currentMonthLabel();
 }
 
 export function findTenantBillingRow(

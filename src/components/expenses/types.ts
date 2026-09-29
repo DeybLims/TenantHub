@@ -51,20 +51,20 @@ export interface UtilityExpenseDerived {
   apartmentCalculatedAmount: number;
   /** Entered Meralco master bill (or allocated sum when bill is 0) */
   computedMeralcoMasterBill: number;
-  /** computedMeralcoMasterBill - meralcoPaidThisMonth */
+  /** computedMeralcoMasterBill */
   meralcoBalance: number;
   /** Effective ₱/m³ used for allocation */
   miwdTrueRate: number;
-  /** Entered total or residential + commercial + pumped m³ */
+  /** Entered total or residential + commercial m³ */
   miwdTotalConsumption: number;
-  /** computedMiwdMasterBill - miwdPaidThisMonth */
+  /** computedMiwdMasterBill + pumpedWaterAmount */
   miwdBalance: number;
   electricitySellingRate: number;
   /** residential m³ * true rate */
   miwdResidentialAmount: number;
   /** commercial m³ * true rate */
   miwdCommercialAmount: number;
-  /** pumped m³ * waterMotorRate (or true rate) */
+  /** Motor kWh × electricity rate — pump electricity charged to water */
   pumpedWaterAmount: number;
   /** Entered MIWD master bill (or allocated sum when bill is 0) */
   computedMiwdMasterBill: number;

@@ -30,7 +30,11 @@ interface ExpenseFormProps {
 
 const inputClass = `${floatingInputClass} text-navy`;
 
-const EMPTY_TOUCHED: ConsumptionTouched = { a: false, b: false, c: false };
+// Electricity splits three ways (JJC + Tenant + Motor).
+const ELEC_EMPTY_TOUCHED: ConsumptionTouched = { a: false, b: false, c: false };
+// Water splits two ways (Residential + Commercial); part "c" stays locked at 0
+// so the remainder never lands on it.
+const WATER_EMPTY_TOUCHED: ConsumptionTouched = { a: false, b: false, c: true };
 
 function SectionTitle({ children }: { children: string }) {
   return (
@@ -206,9 +210,9 @@ export function ExpenseForm({
   const [showSavedToast, setShowSavedToast] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [elecTouched, setElecTouched] =
-    useState<ConsumptionTouched>(EMPTY_TOUCHED);
+    useState<ConsumptionTouched>(ELEC_EMPTY_TOUCHED);
   const [waterTouched, setWaterTouched] =
-    useState<ConsumptionTouched>(EMPTY_TOUCHED);
+    useState<ConsumptionTouched>(WATER_EMPTY_TOUCHED);
 
   useEffect(() => {
     if (isDirty) setShowSavedToast(false);
@@ -230,7 +234,7 @@ export function ExpenseForm({
     setWaterTouched({
       a: record.miwdResidentialM3 > 0,
       b: record.miwdCommercialM3 > 0,
-      c: record.pumpedWaterChargeM3 > 0,
+      c: true,
     });
     // Only re-seed when month identity changes, not on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -255,7 +259,7 @@ export function ExpenseForm({
   ) => {
     // Clearing the total resets the whole electricity consumption block.
     if (total <= 0) {
-      setElecTouched(EMPTY_TOUCHED);
+      setElecTouched(ELEC_EMPTY_TOUCHED);
       onRecordChange({
         meralcoTotalConsumptionKwh: 0,
         jjcConsumptionKwh: 0,
@@ -278,39 +282,38 @@ export function ExpenseForm({
 
   const applyWaterParts = (
     total: number,
-    parts: { a: number; b: number; c: number },
+    parts: { a: number; b: number },
     touched: ConsumptionTouched,
   ) => {
     if (total <= 0) {
-      setWaterTouched(EMPTY_TOUCHED);
+      setWaterTouched(WATER_EMPTY_TOUCHED);
       onRecordChange({
         miwdTotalConsumptionM3: 0,
         miwdResidentialM3: 0,
         miwdCommercialM3: 0,
-        pumpedWaterChargeM3: 0,
         miwdBillAmount: 0,
         miwdPaidThisMonth: 0,
       });
       return;
     }
 
-    const allocated = allocateRemainingConsumption(total, parts, touched);
+    const allocated = allocateRemainingConsumption(
+      total,
+      { ...parts, c: 0 },
+      touched,
+    );
     onRecordChange({
       miwdTotalConsumptionM3: total,
       miwdResidentialM3: allocated.a,
       miwdCommercialM3: allocated.b,
-      pumpedWaterChargeM3: allocated.c,
+      pumpedWaterChargeM3: 0,
     });
   };
 
   const handleElecTotalChange = (total: number) => {
     // Fresh total → unlock parts so they auto-split / rebalance again.
-    setElecTouched(EMPTY_TOUCHED);
-    applyElecParts(
-      total,
-      { a: 0, b: 0, c: 0 },
-      EMPTY_TOUCHED,
-    );
+    setElecTouched(ELEC_EMPTY_TOUCHED);
+    applyElecParts(total, { a: 0, b: 0, c: 0 }, ELEC_EMPTY_TOUCHED);
   };
 
   const handleElecPartChange = (
@@ -343,32 +346,23 @@ export function ExpenseForm({
   };
 
   const handleWaterTotalChange = (total: number) => {
-    setWaterTouched(EMPTY_TOUCHED);
-    applyWaterParts(total, { a: 0, b: 0, c: 0 }, EMPTY_TOUCHED);
+    setWaterTouched(WATER_EMPTY_TOUCHED);
+    applyWaterParts(total, { a: 0, b: 0 }, WATER_EMPTY_TOUCHED);
   };
 
-  const handleWaterPartChange = (
-    key: keyof ConsumptionTouched,
-    value: number,
-  ) => {
-    const allLocked = waterTouched.a && waterTouched.b && waterTouched.c;
-    const nextTouched: ConsumptionTouched = allLocked
-      ? {
-          a: key === "a" && value > 0,
-          b: key === "b" && value > 0,
-          c: key === "c" && value > 0,
-        }
-      : {
-          ...waterTouched,
-          [key]: value > 0,
-        };
+  const handleWaterPartChange = (key: "a" | "b", value: number) => {
+    // After both parts are locked, editing one re-opens the other so it
+    // takes the remainder again.
+    const nextTouched: ConsumptionTouched =
+      waterTouched.a && waterTouched.b
+        ? { a: key === "a" && value > 0, b: key === "b" && value > 0, c: true }
+        : { ...waterTouched, [key]: value > 0, c: true };
     setWaterTouched(nextTouched);
     applyWaterParts(
       record.miwdTotalConsumptionM3,
       {
         a: key === "a" ? value : record.miwdResidentialM3,
         b: key === "b" ? value : record.miwdCommercialM3,
-        c: key === "c" ? value : record.pumpedWaterChargeM3,
       },
       nextTouched,
     );
@@ -389,16 +383,14 @@ export function ExpenseForm({
       : 0;
 
   const waterPartsSum = roundCurrency(
-    record.miwdResidentialM3 +
-      record.miwdCommercialM3 +
-      record.pumpedWaterChargeM3,
+    record.miwdResidentialM3 + record.miwdCommercialM3,
   );
   const waterMismatch =
     record.miwdTotalConsumptionM3 > 0
       ? consumptionMismatch(record.miwdTotalConsumptionM3, {
           a: record.miwdResidentialM3,
           b: record.miwdCommercialM3,
-          c: record.pumpedWaterChargeM3,
+          c: 0,
         })
       : 0;
 
@@ -421,13 +413,11 @@ export function ExpenseForm({
       : waterPartsSum) * Math.max(0, waterRatePreview),
   );
   const elecBalancePreview = roundCurrency(
-    (record.meralcoBillAmount > 0
-      ? record.meralcoBillAmount
-      : elecBillPreview) - record.meralcoPaidThisMonth,
+    record.meralcoBillAmount > 0 ? record.meralcoBillAmount : elecBillPreview,
   );
   const waterBalancePreview = roundCurrency(
-    (record.miwdBillAmount > 0 ? record.miwdBillAmount : waterBillPreview) -
-      record.miwdPaidThisMonth,
+    (record.miwdBillAmount > 0 ? record.miwdBillAmount : waterBillPreview) +
+      derived.pumpedWaterAmount,
   );
 
   const formatBillPreviewHint = (
@@ -517,6 +507,7 @@ export function ExpenseForm({
                 value={record.motorConsumptionKwh}
                 onChange={(value) => handleElecPartChange("c", value)}
                 unit="kWh"
+                hint="Also used for the Pumped Water Charge under Water"
               />
               {Math.abs(elecMismatch) > 0.01 && (
                 <p className="text-xs font-medium text-amber-600">
@@ -551,15 +542,6 @@ export function ExpenseForm({
                 }
               />
               <CurrencyField
-                label="Amount Paid This Month"
-                value={record.meralcoPaidThisMonth}
-                onChange={(value) =>
-                  onRecordChange({ meralcoPaidThisMonth: value })
-                }
-                highlight
-                placeholder="0.00"
-              />
-              <CurrencyField
                 label="Balance"
                 value={elecBalancePreview}
                 readOnly
@@ -584,15 +566,8 @@ export function ExpenseForm({
                 onChange={handleWaterTotalChange}
                 unit="m³"
                 hint={
-                  record.miwdResidentialM3 +
-                    record.miwdCommercialM3 +
-                    record.pumpedWaterChargeM3 >
-                  0
-                    ? `Residential + Commercial + Pumped = ${roundCurrency(
-                        record.miwdResidentialM3 +
-                          record.miwdCommercialM3 +
-                          record.pumpedWaterChargeM3,
-                      ).toFixed(2)} m³`
+                  waterPartsSum > 0
+                    ? `Residential + Commercial = ${waterPartsSum.toFixed(2)} m³`
                     : "m³ from the MIWD bill (consumption only)"
                 }
               />
@@ -618,12 +593,6 @@ export function ExpenseForm({
                 label="Commercial Base"
                 value={record.miwdCommercialM3}
                 onChange={(value) => handleWaterPartChange("b", value)}
-                unit="m³"
-              />
-              <NumberField
-                label="Pumped Water Charge"
-                value={record.pumpedWaterChargeM3}
-                onChange={(value) => handleWaterPartChange("c", value)}
                 unit="m³"
               />
               {Math.abs(waterMismatch) > 0.01 && (
@@ -657,13 +626,14 @@ export function ExpenseForm({
                 }
               />
               <CurrencyField
-                label="Amount Paid This Month"
-                value={record.miwdPaidThisMonth}
-                onChange={(value) =>
-                  onRecordChange({ miwdPaidThisMonth: value })
+                label="Pumped Water Charge"
+                value={derived.pumpedWaterAmount}
+                readOnly
+                hint={
+                  record.motorConsumptionKwh > 0
+                    ? `Motor ${record.motorConsumptionKwh.toFixed(2)} kWh × ₱${elecRatePreview.toFixed(2)}`
+                    : "Motor Consumption (kWh) × Electricity Charge Rate"
                 }
-                highlight
-                placeholder="0.00"
               />
               <CurrencyField
                 label="Balance"
@@ -672,8 +642,8 @@ export function ExpenseForm({
                 highlight
                 hint={
                   record.miwdBillAmount <= 0 && waterBillPreview > 0
-                    ? "Using ₱ preview until you enter the master bill"
-                    : undefined
+                    ? "Using ₱ preview until you enter the master bill · includes Pumped Water Charge"
+                    : "MIWD Master Bill + Pumped Water Charge"
                 }
               />
             </div>

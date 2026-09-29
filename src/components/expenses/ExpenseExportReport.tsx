@@ -212,16 +212,8 @@ export function ExpenseExportReport({
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <SummaryRow
-            label="Meralco Paid This Month"
-            value={formatExpenseAmount(record.meralcoPaidThisMonth)}
-          />
-          <SummaryRow
             label="Meralco Balance"
             value={formatExpenseAmount(derived.meralcoBalance)}
-          />
-          <SummaryRow
-            label="MIWD Paid This Month"
-            value={formatExpenseAmount(record.miwdPaidThisMonth)}
           />
           <SummaryRow
             label="MIWD Balance"

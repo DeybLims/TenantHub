@@ -434,10 +434,11 @@ export function transformSheetToDashboard(
   };
 }
 
+/** An empty array counts as valid — it means there are no bills yet. */
 export function isSheetRowArray(data: unknown): data is SheetRow[] {
+  if (!Array.isArray(data)) return false;
+  if (data.length === 0) return true;
   return (
-    Array.isArray(data) &&
-    data.length > 0 &&
     typeof data[0] === "object" &&
     data[0] !== null &&
     "Month" in data[0]

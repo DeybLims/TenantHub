@@ -65,7 +65,7 @@ export function TenantsPage() {
   );
 
   useEffect(() => {
-    if (!billingRows?.length || selectedMonth) return;
+    if (!billingRows || selectedMonth) return;
     setSelectedMonth(getDefaultBillingMonth(billingRows));
   }, [billingRows, selectedMonth]);
 

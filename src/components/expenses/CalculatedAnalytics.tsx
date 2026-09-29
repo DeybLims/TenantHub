@@ -165,20 +165,19 @@ export function CalculatedAnalytics({ analytics }: CalculatedAnalyticsProps) {
             value={formatExpenseAmount(derived.miwdCommercialAmount)}
           />
           <AnalyticsRow
-            label="Pumped Water Charge"
-            value={formatExpenseAmount(derived.pumpedWaterAmount)}
-          />
-          <AnalyticsRow
             label="Master Bill Amount"
             value={formatExpenseAmount(
               derived.computedMiwdMasterBill > 0
                 ? derived.computedMiwdMasterBill
                 : derived.miwdResidentialAmount +
-                    derived.miwdCommercialAmount +
-                    derived.pumpedWaterAmount,
+                    derived.miwdCommercialAmount,
             )}
             emphasize
             alignRight
+          />
+          <AnalyticsRow
+            label="Pumped Water Charge"
+            value={formatExpenseAmount(derived.pumpedWaterAmount)}
           />
           <AnalyticsRow
             label="Paid Tenant Billed"

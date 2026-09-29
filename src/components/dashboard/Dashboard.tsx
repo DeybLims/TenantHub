@@ -20,6 +20,7 @@ import {
   getMockDashboardData,
   getMockTenants,
 } from "@/services/api";
+import { currentMonthLabel } from "@/lib/months";
 import { transformSheetToDashboard } from "@/lib/transformSheetData";
 import { buildOccupancyFromTenants } from "@/lib/tenantRooms";
 import type { UtilityRow } from "@/types/dashboard";
@@ -44,8 +45,15 @@ export function Dashboard() {
   const data = useMemo(() => {
     if (USE_MOCK) return getMockDashboardData();
     const rows = billingQuery.data;
-    if (!rows?.length) return undefined;
-    return transformSheetToDashboard(rows, selectedMonth || undefined);
+    if (!rows) return undefined;
+    const dashboard = transformSheetToDashboard(rows, selectedMonth || undefined);
+    if (rows.length > 0) return dashboard;
+    const month = currentMonthLabel();
+    return {
+      ...dashboard,
+      activeMonth: month,
+      availableMonths: [{ value: month, label: month }],
+    };
   }, [billingQuery.data, selectedMonth]);
 
   const isLoading = billingQuery.isLoading || tenantsQuery.isLoading;

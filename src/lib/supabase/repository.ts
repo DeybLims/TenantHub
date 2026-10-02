@@ -3,17 +3,35 @@ import { roundCurrency } from "@/lib/propertyBillingCalculations";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ExpenseRecord } from "@/components/expenses/types";
 import {
+  billingDateToSheetMonth,
   billingRowsMatchMonth,
   mapBillingRow,
   mapTenantRow,
   mapUtilityExpenseRow,
   sheetMonthToBillingDate,
+  toDbDate,
+  todayDbDate,
   utilityExpenseRecordToRow,
   type DbBillingRow,
   type DbTenantRow,
   type DbUtilityExpenseRow,
 } from "@/lib/supabase/mappers";
-import type { GenerateBillPayload, UpdateBillPayload } from "@/types/billing";
+import {
+  billMonthLabel,
+  describeChainConflict,
+  findNextBill,
+  restoreNextBillReadings,
+  syncNextBillReadings,
+  type CurrentReadings,
+} from "@/lib/supabase/meterChain";
+import type {
+  BillingActionResult,
+  BillPaymentMethod,
+  GenerateBillPayload,
+  PayBalancePayload,
+  PayBalanceResult,
+  UpdateBillPayload,
+} from "@/types/billing";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
 
@@ -206,35 +224,101 @@ async function findBillingRecord(
   })[0];
 }
 
-async function clearRoomBillingHistory(room: number): Promise<void> {
+/**
+ * Soft delete: clears the occupant's profile and marks the room Vacant.
+ * `billing_records` and `payment_activities` are never touched, so revenue
+ * history survives; the next tenant's views start at their move-in month.
+ */
+export async function vacateSupabaseTenant(
+  roomValue: number | string | undefined,
+): Promise<ApiResult> {
   const supabase = getSupabaseAdmin();
+  const room = readRoom(roomValue);
+  if (!room) return { success: false, message: "Room is required." };
 
-  const { data: bills, error: listError } = await supabase
-    .from("billing_records")
-    .select("id")
-    .eq("room", room);
+  const { data: current, error: fetchError } = await supabase
+    .from("tenants")
+    .select("*")
+    .eq("room", room)
+    .maybeSingle<DbTenantRow>();
+  if (fetchError) throw new Error(fetchError.message);
 
-  if (listError) throw new Error(listError.message);
-
-  const billingIds = (bills ?? []).map(
-    (row) => (row as { id: string }).id,
-  );
-
-  if (billingIds.length > 0) {
-    const { error: activityError } = await supabase
-      .from("payment_activities")
-      .delete()
-      .in("billing_record_id", billingIds);
-
-    if (activityError) throw new Error(activityError.message);
+  if (!current || current.status !== "Active" || !current.name.trim()) {
+    return {
+      success: false,
+      message: "Active tenant for this room was not found.",
+    };
   }
 
-  const { error: billingError } = await supabase
-    .from("billing_records")
-    .delete()
+  const { error } = await supabase
+    .from("tenants")
+    .update({
+      name: "",
+      contact_number: "",
+      email_address: "",
+      emergency_contact: "",
+      emergency_number: "",
+      lease_start: null,
+      move_in: null,
+      rent: 0,
+      deposit: 0,
+      notes: "",
+      status: "Vacant",
+      credit_balance: 0,
+    })
     .eq("room", room);
+  if (error) throw new Error(error.message);
 
-  if (billingError) throw new Error(billingError.message);
+  const clearedCredit = roundCurrency(Number(current.credit_balance) || 0);
+  return {
+    success: true,
+    message:
+      `${current.name.trim()} moved out. Room ${room} is now vacant; billing and payment history was kept.` +
+      (clearedCredit > 0
+        ? ` Their unused credit of ${formatPeso(clearedCredit)} was cleared.`
+        : ""),
+  };
+}
+
+/**
+ * A new occupant's move-in must come after the room's last chargeable bill,
+ * otherwise the previous occupant's bills would appear on their statement.
+ */
+async function checkMoveInAfterRoomHistory(
+  room: number,
+  moveIn: string | undefined,
+): Promise<ApiResult | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("billing_records")
+    .select("billing_month")
+    .eq("room", room)
+    .neq("status", "Vacant")
+    .order("billing_month", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ billing_month: string }>();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  const lastKey = billingMonthKey(data.billing_month);
+  const [year, month] = lastKey.split("-").map(Number);
+  const firstFree = billingDateToSheetMonth(
+    `${month === 12 ? year + 1 : year}-${String((month % 12) + 1).padStart(2, "0")}-01`,
+  );
+  const lastLabel = billingDateToSheetMonth(data.billing_month);
+
+  if (!moveIn) {
+    return {
+      success: false,
+      message: `Room ${room} has billing history up to ${lastLabel}. Enter a move-in date in ${firstFree} or later.`,
+    };
+  }
+  if (billingMonthKey(moveIn) <= lastKey) {
+    return {
+      success: false,
+      message: `Room ${room} already has a bill for ${lastLabel} from the previous occupant. Set the move-in date to ${firstFree} or later so those bills stay with them.`,
+    };
+  }
+  return null;
 }
 
 export async function saveSupabaseTenant(
@@ -259,50 +343,21 @@ export async function saveSupabaseTenant(
   const current = existing as DbTenantRow | null;
 
   if (isVacateRequest(data)) {
-    if (!current || current.status !== "Active" || !current.name.trim()) {
-      return {
-        success: false,
-        message: "Active tenant for this room was not found.",
-      };
-    }
-
-    // Clear prior occupant billing so the next tenant starts with a clean slate.
-    await clearRoomBillingHistory(room);
-
-    const { error } = await supabase
-      .from("tenants")
-      .update({
-        name: "",
-        contact_number: "",
-        email_address: "",
-        emergency_contact: "",
-        emergency_number: "",
-        lease_start: null,
-        move_in: null,
-        rent: 0,
-        deposit: 0,
-        notes: "",
-        status: "Vacant",
-        credit_balance: 0,
-      })
-      .eq("room", room);
-
-    if (error) throw new Error(error.message);
-    return {
-      success: true,
-      message: "Room set to Vacant. Prior billing history cleared.",
-    };
+    return vacateSupabaseTenant(room);
   }
 
   if (!String(data.name ?? "").trim()) {
     return { success: false, message: "Tenant name is required." };
   }
 
-  // Editing an occupied room (including renaming) keeps its bills; replacing a
-  // tenant goes through vacate first, which clears the prior occupant's history.
+  // Bills are never deleted: a new occupant's history starts at their move-in.
   const wasVacant = !current || current.status === "Vacant" || !current.name.trim();
   if (wasVacant) {
-    await clearRoomBillingHistory(room);
+    const moveInConflict = await checkMoveInAfterRoomHistory(
+      room,
+      data.moveIn || data.leaseStart || undefined,
+    );
+    if (moveInConflict) return moveInConflict;
   }
 
   const payload = {
@@ -342,13 +397,13 @@ export async function saveSupabaseTenant(
 /**
  * Bills before the occupant's move-in month are hidden everywhere, so they are
  * only allowed when the caller also moves the move-in back to cover them.
- * Returns an error result, or null when the bill may be created.
+ * Returns the rejection, or an undo for the move-in change (if one was made).
  */
 async function ensureBillIsWithinOccupancy(
   room: number,
   billingMonth: string,
   moveInDate: string | undefined,
-): Promise<ApiResult | null> {
+): Promise<{ blocked: BillingActionResult } | { undo: UndoStep | null }> {
   const supabase = getSupabaseAdmin();
   const { data: tenant, error } = await supabase
     .from("tenants")
@@ -360,13 +415,18 @@ async function ensureBillIsWithinOccupancy(
 
   const occupancyKey = billingMonthKey(tenant?.move_in ?? tenant?.lease_start ?? "");
   const billingKey = billingMonthKey(billingMonth);
-  if (!occupancyKey || !billingKey || billingKey >= occupancyKey) return null;
+  if (!occupancyKey || !billingKey || billingKey >= occupancyKey) {
+    return { undo: null };
+  }
 
   if (!isIsoDate(moveInDate) || billingMonthKey(moveInDate) > billingKey) {
     return {
-      success: false,
-      message:
-        "This month is before the tenant's move-in date. Move the move-in date back to bill it.",
+      blocked: {
+        success: false,
+        step: "validate",
+        message:
+          "This month is before the tenant's move-in date. Move the move-in date back to bill it.",
+      },
     };
   }
 
@@ -376,12 +436,51 @@ async function ensureBillIsWithinOccupancy(
     .eq("room", room);
   if (updateError) throw new Error(updateError.message);
 
-  return null;
+  const previousMoveIn = tenant?.move_in ?? null;
+  return {
+    undo: async () => {
+      const { error: undoError } = await supabase
+        .from("tenants")
+        .update({ move_in: previousMoveIn })
+        .eq("room", room);
+      return !undoError;
+    },
+  };
 }
 
+/** Reverses one completed step; resolves false if the undo itself failed. */
+type UndoStep = () => Promise<boolean>;
+
+/** Runs undo steps newest-first; true only if every one succeeded. */
+async function runUndo(steps: UndoStep[]): Promise<boolean> {
+  let ok = true;
+  for (const step of [...steps].reverse()) {
+    ok = (await step().catch(() => false)) && ok;
+  }
+  return ok;
+}
+
+function errorDetails(error: unknown): string {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" && error && "message" in error
+        ? String((error as { message: unknown }).message)
+        : String(error);
+  return message ? `Details: ${message}` : "";
+}
+
+const formatPeso = (value: number) =>
+  `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+
+/**
+ * Creates a bill in steps: create → sync the next month's previous readings →
+ * record payment → apply credit. Up to the payment, a failure undoes the
+ * earlier steps; past it, the result reports which step failed.
+ */
 export async function generateSupabaseBill(
   data: GenerateBillPayload,
-): Promise<ApiResult> {
+): Promise<BillingActionResult> {
   const supabase = getSupabaseAdmin();
   const room = readRoom(data.room);
   const billingMonth = sheetMonthToBillingDate(data.month);
@@ -398,16 +497,30 @@ export async function generateSupabaseBill(
   if (existing) {
     return {
       success: false,
+      step: "validate",
       message: "A bill already exists for this room and month.",
     };
   }
 
+  const readings: CurrentReadings = {
+    elecCurr: Number(data.eCurr) || 0,
+    waterCurr: Number(data.wCurr) || 0,
+  };
+  // Backfilling a past month: the following bill must chain from this one.
+  const nextBill = await findNextBill(room, billingMonth);
+  const chainConflict = nextBill && describeChainConflict(nextBill, readings);
+  if (chainConflict) {
+    return { success: false, step: "validate", message: chainConflict };
+  }
+
+  const undoSteps: UndoStep[] = [];
   const moveInCheck = await ensureBillIsWithinOccupancy(
     room,
     billingMonth,
     data.moveInDate,
   );
-  if (moveInCheck) return moveInCheck;
+  if ("blocked" in moveInCheck) return moveInCheck.blocked;
+  if (moveInCheck.undo) undoSteps.push(moveInCheck.undo);
 
   const eCons = Number(data.eCurr) - Number(data.ePrev);
   const wCons = Number(data.wCurr) - Number(data.wPrev);
@@ -434,38 +547,129 @@ export async function generateSupabaseBill(
     total_due: totalDue,
     paid: 0,
     date_paid: null,
-    billing_date: isIsoDate(data.billingDate) ? data.billingDate : null,
-    due_date: isIsoDate(data.dueDate) ? data.dueDate : null,
+    billing_date: toDbDate(data.billingDate),
+    due_date: toDbDate(data.dueDate),
     notes: data.notes?.trim() ?? "",
     status: "Unpaid",
   })
     .select("id")
     .single();
 
-  if (error) throw new Error(error.message);
-
-  const billingId = (inserted as { id: string }).id;
-
-  // Payment clears older unpaid bills first, then this bill; the rest is credit.
-  const { newBillPaid, overpayment } = await allocatePaymentOldestFirst(
-    room,
-    billingId,
-    paidAtCreation,
-  );
-
-  const creditApplied = await applyTenantCreditToBill(
-    room,
-    billingId,
-    roundCurrency(totalDue),
-    newBillPaid,
-  );
-
-  if (overpayment > 0) {
-    await setTenantCredit(room, (await readTenantCredit(room)) + overpayment);
+  if (error) {
+    await runUndo(undoSteps);
+    return {
+      success: false,
+      step: "create_bill",
+      message: `Failed to create the bill. ${errorDetails(error)}`,
+    };
   }
 
-  const peso = (value: number) =>
-    `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+  const billingId = (inserted as { id: string }).id;
+  undoSteps.push(async () => {
+    const { error: deleteError } = await supabase
+      .from("billing_records")
+      .delete()
+      .eq("id", billingId);
+    return !deleteError;
+  });
+
+  if (nextBill) {
+    const label = billMonthLabel(nextBill);
+    try {
+      const previous = await syncNextBillReadings(nextBill, readings);
+      if (previous) {
+        undoSteps.push(() => restoreNextBillReadings(nextBill.id, previous));
+      }
+    } catch (syncError) {
+      const undone = await runUndo(undoSteps);
+      return undone
+        ? {
+            success: false,
+            step: "sync_meter_readings",
+            message: `Failed to update the ${label} bill's previous meter readings, so this bill was not created. ${errorDetails(syncError)}`,
+          }
+        : {
+            success: false,
+            step: "sync_meter_readings",
+            committed: true,
+            message: `Bill created, but the ${label} bill's previous meter readings could not be updated. Edit the ${label} bill to fix them. ${errorDetails(syncError)}`,
+          };
+    }
+  }
+
+  // Payment clears older unpaid bills first, then this bill; the rest is credit.
+  let newBillPaid = 0;
+  let overpayment = 0;
+  if (paidAtCreation > 0) {
+    try {
+      const payment = await applyTenantPaymentAtomically({
+        room,
+        amount: paidAtCreation,
+        paymentDate: todayDbDate(),
+        method: "other",
+        reference: "Paid when a new bill was generated",
+      });
+      newBillPaid =
+        payment.allocations.find((item) => item.billing_record_id === billingId)
+          ?.new_paid ?? 0;
+      overpayment = payment.creditAdded;
+    } catch (paymentError) {
+      if (!(paymentError instanceof PaymentFunctionMissingError)) {
+        // The payment function is all-or-nothing, so nothing was paid.
+        const undone = await runUndo(undoSteps);
+        return undone
+          ? {
+              success: false,
+              step: "record_payment",
+              message: `Failed to record the payment, so the bill was not created. ${errorDetails(paymentError)}`,
+            }
+          : {
+              success: false,
+              step: "record_payment",
+              committed: true,
+              message: `Bill created, but failed to record the ${formatPeso(paidAtCreation)} payment. Use Pay Balance to record it. ${errorDetails(paymentError)}`,
+            };
+      }
+      try {
+        const legacy = await allocatePaymentOldestFirst(
+          room,
+          billingId,
+          paidAtCreation,
+        );
+        newBillPaid = legacy.newBillPaid;
+        overpayment = legacy.overpayment;
+        if (overpayment > 0) {
+          await setTenantCredit(room, (await readTenantCredit(room)) + overpayment);
+        }
+      } catch (legacyError) {
+        return {
+          success: false,
+          step: "record_payment",
+          committed: true,
+          message: `Bill created, but the ${formatPeso(paidAtCreation)} payment was only partly recorded. Check this room's bills before recording it again. ${errorDetails(legacyError)}`,
+        };
+      }
+    }
+  }
+
+  let creditApplied = 0;
+  try {
+    creditApplied = await applyTenantCreditToBill(
+      room,
+      billingId,
+      roundCurrency(totalDue),
+      newBillPaid,
+    );
+  } catch (creditError) {
+    return {
+      success: false,
+      step: "apply_credit",
+      committed: true,
+      message: `Bill created${paidAtCreation > 0 ? " and payment recorded" : ""}, but failed to apply tenant credit. ${errorDetails(creditError)}`,
+    };
+  }
+
+  const peso = formatPeso;
   const extras = [
     creditApplied > 0 ? `${peso(creditApplied)} credit applied` : "",
     overpayment > 0 ? `${peso(overpayment)} carried over as credit` : "",
@@ -479,10 +683,118 @@ export async function generateSupabaseBill(
   };
 }
 
+const APPLY_PAYMENT_SQL = "scripts/supabase/add-apply-tenant-payment.sql";
+
+class PaymentFunctionMissingError extends Error {
+  constructor() {
+    super(
+      `Payments need a one-time database update. Run ${APPLY_PAYMENT_SQL} in the Supabase SQL Editor, then try again.`,
+    );
+    this.name = "PaymentFunctionMissingError";
+  }
+}
+
+interface AtomicPaymentResult {
+  allocations: Array<{
+    billing_record_id: string;
+    billing_month: string;
+    amount: number;
+    new_paid: number;
+  }>;
+  creditAdded: number;
+}
+
 /**
- * Applies a payment to the room's unpaid bills oldest-first, logging one
- * payment activity per bill. Returns how much landed on `newBillId` and any
- * amount left over after every bill is paid.
+ * Runs `apply_tenant_payment` — bill updates, payment activities and leftover
+ * credit commit together or not at all.
+ */
+async function applyTenantPaymentAtomically(input: {
+  room: number;
+  amount: number;
+  paymentDate: string;
+  method: BillPaymentMethod;
+  reference: string;
+}): Promise<AtomicPaymentResult> {
+  const { data, error } = await getSupabaseAdmin().rpc("apply_tenant_payment", {
+    p_room: input.room,
+    p_amount: roundCurrency(input.amount),
+    p_payment_date: input.paymentDate,
+    p_method: input.method,
+    p_reference: input.reference,
+  });
+
+  if (error) {
+    if (error.code === "PGRST202" || error.code === "42883") {
+      throw new PaymentFunctionMissingError();
+    }
+    throw new Error(error.message);
+  }
+
+  const result = (data ?? {}) as {
+    allocations?: AtomicPaymentResult["allocations"];
+    credit_added?: number | string;
+  };
+  return {
+    allocations: (result.allocations ?? []).map((item) => ({
+      ...item,
+      amount: Number(item.amount) || 0,
+      new_paid: Number(item.new_paid) || 0,
+    })),
+    creditAdded: roundCurrency(Number(result.credit_added) || 0),
+  };
+}
+
+export async function paySupabaseBalance(
+  data: PayBalancePayload,
+): Promise<PayBalanceResult> {
+  const room = readRoom(data.room);
+  const amount = roundCurrency(Number(data.amount) || 0);
+  if (amount <= 0) {
+    return { success: false, message: "Enter a valid payment amount." };
+  }
+
+  const paymentDate = toDbDate(data.paymentDate);
+  if (!paymentDate) {
+    return { success: false, message: "Enter a valid payment date." };
+  }
+
+  try {
+    const result = await applyTenantPaymentAtomically({
+      room,
+      amount,
+      paymentDate,
+      method: data.method,
+      reference: data.reference?.trim() ?? "",
+    });
+
+    const peso = (value: number) =>
+      `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+    const billCount = result.allocations.length;
+    return {
+      success: true,
+      message:
+        `Payment of ${peso(amount)} applied to ${billCount} bill${billCount === 1 ? "" : "s"}.` +
+        (result.creditAdded > 0
+          ? ` ${peso(result.creditAdded)} carried over as credit.`
+          : ""),
+      creditAdded: result.creditAdded,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      step: "record_payment",
+      message:
+        error instanceof PaymentFunctionMissingError
+          ? error.message
+          : `Failed to record the payment. Nothing was saved. ${errorDetails(error)}`,
+    };
+  }
+}
+
+/**
+ * Fallback for databases without `apply_tenant_payment`: applies a payment to
+ * the room's unpaid bills oldest-first, logging one payment activity per bill.
+ * Returns how much landed on `newBillId` and any amount left over.
  */
 async function allocatePaymentOldestFirst(
   room: number,
@@ -494,14 +806,18 @@ async function allocatePaymentOldestFirst(
   if (remaining <= 0) return { newBillPaid, overpayment: 0 };
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  const fromMonth = await occupancyStartMonth(room);
+  let query = supabase
     .from("billing_records")
     .select("id, billing_month, total_due, paid")
     .eq("room", room)
-    .order("billing_month", { ascending: true });
+    .neq("status", "Vacant");
+  // Earlier bills belong to previous occupants of the room.
+  if (fromMonth) query = query.gte("billing_month", fromMonth);
+  const { data, error } = await query.order("billing_month", { ascending: true });
   if (error) throw new Error(error.message);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayDbDate();
   const bills = (data ?? []) as Array<{
     id: string;
     billing_month: string;
@@ -549,6 +865,18 @@ async function allocatePaymentOldestFirst(
   return { newBillPaid, overpayment: remaining };
 }
 
+/** First day of the current occupant's move-in month (YYYY-MM-01), or null. */
+async function occupancyStartMonth(room: number): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("tenants")
+    .select("move_in, lease_start")
+    .eq("room", room)
+    .maybeSingle<{ move_in: string | null; lease_start: string | null }>();
+  if (error) throw new Error(error.message);
+  const key = billingMonthKey(data?.move_in ?? data?.lease_start ?? "");
+  return key ? `${key}-01` : null;
+}
+
 async function readTenantCredit(room: number): Promise<number> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -586,8 +914,12 @@ async function applyTenantCreditToBill(
 
   const applied = roundCurrency(Math.min(credit, remaining));
   const newPaid = roundCurrency(alreadyPaid + applied);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayDbDate();
   const supabase = getSupabaseAdmin();
+
+  // Deduct first: if the bill update then fails the credit is put back, so
+  // the same credit can never be spent twice.
+  await setTenantCredit(room, credit - applied);
 
   const { error } = await supabase
     .from("billing_records")
@@ -597,7 +929,17 @@ async function applyTenantCreditToBill(
       date_paid: today,
     })
     .eq("id", billingId);
-  if (error) throw new Error(error.message);
+  if (error) {
+    const restored = await setTenantCredit(room, credit).then(
+      () => true,
+      () => false,
+    );
+    throw new Error(
+      restored
+        ? `${error.message} The tenant's credit balance was not changed.`
+        : `${error.message} ₱${applied.toFixed(2)} was deducted from the tenant's credit but not applied; correct credit_balance for room ${room}.`,
+    );
+  }
 
   const { error: activityError } = await supabase
     .from("payment_activities")
@@ -612,13 +954,12 @@ async function applyTenantCreditToBill(
     console.warn("payment_activities insert:", activityError.message);
   }
 
-  await setTenantCredit(room, credit - applied);
   return applied;
 }
 
 export async function updateSupabaseBill(
   data: UpdateBillPayload,
-): Promise<ApiResult> {
+): Promise<BillingActionResult> {
   const supabase = getSupabaseAdmin();
   const room = readRoom(data.room);
   const existing = await findBillingRecord(room, data.month);
@@ -626,8 +967,24 @@ export async function updateSupabaseBill(
   if (!existing) {
     return {
       success: false,
+      step: "validate",
       message: "Billing record not found for this month and room.",
     };
+  }
+
+  const readings: CurrentReadings = {
+    elecCurr: Number(data.eCurr) || 0,
+    waterCurr: Number(data.wCurr) || 0,
+  };
+  const readingsChanged =
+    Number(existing.elec_curr) !== readings.elecCurr ||
+    Number(existing.water_curr) !== readings.waterCurr;
+  const nextBill = readingsChanged
+    ? await findNextBill(room, existing.billing_month)
+    : null;
+  const chainConflict = nextBill && describeChainConflict(nextBill, readings);
+  if (chainConflict) {
+    return { success: false, step: "validate", message: chainConflict };
   }
 
   const totalDue =
@@ -636,49 +993,84 @@ export async function updateSupabaseBill(
     Number(data.wBill) +
     Number(data.adjustment || 0);
 
-  const toPgDate = (value: string | null | undefined): string | null => {
-    if (!value) return null;
-    const trimmed = value.trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-    const parsed = new Date(trimmed);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString().slice(0, 10);
-  };
-
   const billingDate =
-    toPgDate(data.billingDate) ?? existing.billing_date ?? null;
-  const dueDate = toPgDate(data.dueDate) ?? existing.due_date ?? null;
+    toDbDate(data.billingDate) ?? existing.billing_date ?? null;
+  const dueDate = toDbDate(data.dueDate) ?? existing.due_date ?? null;
   const datePaid =
-    toPgDate(data.datePaid) ?? existing.date_paid ?? null;
+    toDbDate(data.datePaid) ?? existing.date_paid ?? null;
+
+  const changes = {
+    rent: Number(data.rent) || 0,
+    elec_prev: Number(data.ePrev) || 0,
+    elec_curr: readings.elecCurr,
+    elec_rate: Number(data.eRate) || 0,
+    elec_bill: Number(data.eBill) || 0,
+    water_prev: Number(data.wPrev) || 0,
+    water_curr: readings.waterCurr,
+    water_rate: Number(data.wRate) || 0,
+    water_bill: Number(data.wBill) || 0,
+    adjustment: Number(data.adjustment) || 0,
+    total_due: totalDue,
+    paid: Number(data.paid) || 0,
+    status: (data.status || "Unpaid") as DbBillingRow["status"],
+    billing_date: billingDate,
+    due_date: dueDate,
+    date_paid: datePaid,
+    notes: data.notes ?? existing.notes,
+  } satisfies Partial<DbBillingRow>;
 
   const { error } = await supabase
     .from("billing_records")
-    .update({
-      rent: Number(data.rent) || 0,
-      elec_prev: Number(data.ePrev) || 0,
-      elec_curr: Number(data.eCurr) || 0,
-      elec_rate: Number(data.eRate) || 0,
-      elec_bill: Number(data.eBill) || 0,
-      water_prev: Number(data.wPrev) || 0,
-      water_curr: Number(data.wCurr) || 0,
-      water_rate: Number(data.wRate) || 0,
-      water_bill: Number(data.wBill) || 0,
-      adjustment: Number(data.adjustment) || 0,
-      total_due: totalDue,
-      paid: Number(data.paid) || 0,
-      status: data.status || "Unpaid",
-      billing_date: billingDate,
-      due_date: dueDate,
-      date_paid: datePaid,
-      notes: data.notes ?? existing.notes,
-    })
+    .update(changes)
     .eq("id", existing.id);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    return {
+      success: false,
+      step: "update_bill",
+      message: `Failed to save the bill. ${errorDetails(error)}`,
+    };
+  }
+
+  if (nextBill) {
+    try {
+      await syncNextBillReadings(nextBill, readings);
+    } catch (syncError) {
+      const label = billMonthLabel(nextBill);
+      const original = Object.fromEntries(
+        Object.keys(changes).map((key) => [key, existing[key as keyof DbBillingRow]]),
+      );
+      const { error: revertError } = await supabase
+        .from("billing_records")
+        .update(original)
+        .eq("id", existing.id);
+      return revertError
+        ? {
+            success: false,
+            step: "sync_meter_readings",
+            committed: true,
+            message: `Bill saved, but the ${label} bill's previous meter readings could not be updated. Edit the ${label} bill to fix them. ${errorDetails(syncError)}`,
+          }
+        : {
+            success: false,
+            step: "sync_meter_readings",
+            message: `Failed to update the ${label} bill's previous meter readings, so your changes were not saved. ${errorDetails(syncError)}`,
+          };
+    }
+  }
 
   const creditToTenant = roundCurrency(Number(data.creditToTenant) || 0);
   if (creditToTenant > 0) {
-    await setTenantCredit(room, (await readTenantCredit(room)) + creditToTenant);
+    try {
+      await setTenantCredit(room, (await readTenantCredit(room)) + creditToTenant);
+    } catch (creditError) {
+      return {
+        success: false,
+        step: "apply_credit",
+        committed: true,
+        message: `Bill saved, but failed to add ₱${creditToTenant.toLocaleString("en-PH", { minimumFractionDigits: 2 })} to the tenant's credit. ${errorDetails(creditError)}`,
+      };
+    }
   }
 
   if (data.paymentActivity && data.paymentActivity.amount > 0) {
@@ -689,9 +1081,7 @@ export async function updateSupabaseBill(
         ? data.paymentActivity.method
         : "other";
     const paymentDate =
-      toPgDate(data.paymentActivity.paymentDate) ??
-      datePaid ??
-      new Date().toISOString().slice(0, 10);
+      toDbDate(data.paymentActivity.paymentDate) ?? datePaid ?? todayDbDate();
 
     const { error: activityError } = await supabase
       .from("payment_activities")

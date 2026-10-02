@@ -10,7 +10,14 @@ import {
   isSheetRowArray,
   transformSheetToDashboard,
 } from "@/lib/transformSheetData";
-import type { GenerateBillPayload, UpdateBillPayload } from "@/types/billing";
+import { BillingActionError } from "@/lib/billingErrors";
+import type {
+  BillingActionResult,
+  GenerateBillPayload,
+  PayBalancePayload,
+  PayBalanceResult,
+  UpdateBillPayload,
+} from "@/types/billing";
 import type { DashboardData } from "@/types/dashboard";
 import type { ExpenseRecord as UtilityExpenseRecord } from "@/components/expenses/types";
 import type { SaveExpensePayload, ExpenseRecord } from "@/types/expense";
@@ -108,48 +115,91 @@ export function getMockBillingRows(): SheetRow[] {
 const USE_MOCK =
   process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
-/** Submits an updated bill to the Google Apps Script API. */
-export async function updateBill(data: UpdateBillPayload): Promise<void> {
-  const response = await fetch("/api/billing", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({ action: "updateBill", data }),
-  });
+/**
+ * POSTs a billing action. Rejections come back either as `{ error }` or as
+ * `{ success: false, message }`; both surface as the thrown message.
+ */
+const BILLING_REQUEST_TIMEOUT_MS = 30_000;
 
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(
+/**
+ * POSTs a billing action. Failures throw `BillingActionError` carrying the
+ * failed server step, and a hung request is aborted so callers never stay
+ * pending forever.
+ */
+async function postBillingAction<T extends BillingActionResult>(
+  action: "updateBill" | "generateBill" | "payBalance",
+  data: unknown,
+  failureLabel: string,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BILLING_REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch("/api/billing", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ action, data }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      // The server may still have finished the work.
+      throw new BillingActionError(
+        "The server took too long to respond. The page will refresh to show whether the change was saved.",
+        { kind: "timeout", committed: true },
+      );
+    }
+    throw new BillingActionError(
+      `Check your internet connection and try again. ${error instanceof Error ? error.message : ""}`.trim(),
+      { kind: "network" },
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const body = (await response.json().catch(() => null)) as
+    | (T & { error?: string })
+    | null;
+
+  if (!response.ok || body?.success === false) {
+    throw new BillingActionError(
       body?.error ??
-        `Failed to update bill: ${response.status} ${response.statusText}`,
+        body?.message ??
+        `${failureLabel}: ${response.status} ${response.statusText}`,
+      { step: body?.step, committed: body?.committed },
     );
   }
+
+  return (body ?? { success: true, message: "" }) as T;
 }
 
-/** Submits a new bill to the Google Apps Script API. */
-export async function generateBill(data: GenerateBillPayload): Promise<void> {
-  const response = await fetch("/api/billing", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({ action: "generateBill", data }),
-  });
+/** Saves edits to an existing bill. */
+export async function updateBill(
+  data: UpdateBillPayload,
+): Promise<BillingActionResult> {
+  return postBillingAction("updateBill", data, "Failed to update bill");
+}
 
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(
-      body?.error ??
-        `Failed to generate bill: ${response.status} ${response.statusText}`,
-    );
-  }
+/** Creates a new bill; rejects duplicates and pre-move-in months server-side. */
+export async function generateBill(
+  data: GenerateBillPayload,
+): Promise<BillingActionResult> {
+  return postBillingAction("generateBill", data, "Failed to generate bill");
+}
+
+/** Applies one payment atomically across the room's unpaid bills, oldest first. */
+export async function payBalance(
+  data: PayBalancePayload,
+): Promise<PayBalanceResult> {
+  return postBillingAction<PayBalanceResult>(
+    "payBalance",
+    data,
+    "Failed to record payment",
+  );
 }
 
 /** Fetches tenant records from the Sheets API. */
@@ -290,8 +340,11 @@ export async function updateTenantProfile(
   }
 }
 
-/** Clears a tenant from their room and sets the row back to Vacant. */
-export async function deleteTenant(data: DeleteTenantPayload): Promise<void> {
+/**
+ * Moves a tenant out: clears their profile and sets the room to Vacant.
+ * Billing and payment history is kept. Resolves with the server message.
+ */
+export async function deleteTenant(data: DeleteTenantPayload): Promise<string> {
   const payload = {
     action: "deleteTenant" as const,
     data: {
@@ -326,6 +379,8 @@ export async function deleteTenant(data: DeleteTenantPayload): Promise<void> {
   if (body?.success === false) {
     throw new Error(body.message ?? "Failed to delete tenant.");
   }
+
+  return body?.message ?? "";
 }
 
 /** Fetches expense records from the Sheets API. */

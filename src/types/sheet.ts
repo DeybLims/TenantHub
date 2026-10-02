@@ -28,4 +28,6 @@ export interface SheetRow {
     method: string;
     reference: string;
   }>;
+  /** Client-only: inserted optimistically and not yet confirmed by the server. */
+  Optimistic?: boolean;
 }

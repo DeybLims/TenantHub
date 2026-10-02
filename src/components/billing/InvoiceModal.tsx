@@ -1,14 +1,17 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
+import { useGenerateBillMutation } from "@/hooks/useBillingMutations";
+import { isCommittedFailure } from "@/lib/billingErrors";
 import {
   getPreviousMeterReadings,
   isCurrentReadingBelowPrevious,
 } from "@/lib/billingMeters";
 import { hasBillForRoomMonth } from "@/lib/buildBillingRows";
 import { formatLongDate } from "@/lib/format";
+import { manilaMonthKey, manilaToday } from "@/lib/manilaTime";
 import {
   buildBillsForRoom,
   tenantOccupancyFromDate,
@@ -28,8 +31,6 @@ import {
   WATER_RATE_STANDARD,
 } from "@/lib/propertyBillingCalculations";
 import { readSheetNumber } from "@/lib/readSheetNumber";
-import { generateBill } from "@/services/api";
-import type { GenerateBillPayload } from "@/types/billing";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
 
@@ -129,9 +130,7 @@ function billingDatesForMonth(selectedMonth: string): {
   billingDate: string;
   dueDate: string;
 } {
-  const base =
-    billingMonthToDateInput(selectedMonth) ||
-    new Date().toISOString().slice(0, 10);
+  const base = billingMonthToDateInput(selectedMonth) || manilaToday();
   const date = new Date(`${base}T12:00:00`);
   const year = date.getFullYear();
   const monthIndex = date.getMonth();
@@ -145,11 +144,20 @@ function billingDatesForMonth(selectedMonth: string): {
 export function InvoiceModal({
   open,
   selectedMonth,
-  tenants,
-  billingRows,
+  tenants: liveTenants,
+  billingRows: liveBillingRows,
   onClose,
   onSuccess,
 }: InvoiceModalProps) {
+  // While saving, the cache already contains the optimistic bill; read the
+  // pre-submit data so the form doesn't flip to "Invoice denied" mid-save.
+  const [frozenData, setFrozenData] = useState<{
+    tenants: TenantRecord[];
+    billingRows: SheetRow[];
+  } | null>(null);
+  const tenants = frozenData?.tenants ?? liveTenants;
+  const billingRows = frozenData?.billingRows ?? liveBillingRows;
+
   const activeTenants = useMemo(
     () =>
       tenants
@@ -208,10 +216,27 @@ export function InvoiceModal({
     setBackdateMoveIn(false);
   }, [billingMonth, unitCode]);
 
+  // A previous reading of 0 bills the whole meter value as one month's usage —
+  // only correct for a room's very first bill, so it must be confirmed.
+  const zeroPreviousReadings = selectedTenant
+    ? [
+        readSheetNumber(elecPrev) === 0 ? "electricity" : "",
+        readSheetNumber(waterPrev) === 0 ? "water" : "",
+      ].filter(Boolean)
+    : [];
+  const needsZeroReadingConfirm = zeroPreviousReadings.length > 0;
+  const zeroReadingKey = zeroPreviousReadings.join("+");
+  const [zeroReadingConfirmed, setZeroReadingConfirmed] = useState(false);
   useEffect(() => {
-    if (!open) return;
-    const initialMonth =
-      billingMonthKey(selectedMonth) || new Date().toISOString().slice(0, 7);
+    setZeroReadingConfirmed(false);
+  }, [billingMonth, unitCode, zeroReadingKey]);
+
+  useEffect(() => {
+    if (!open) {
+      setFrozenData(null);
+      return;
+    }
+    const initialMonth = billingMonthKey(selectedMonth) || manilaMonthKey();
     const { billingDate: autoBillingDate, dueDate: autoDueDate } =
       billingDatesForMonth(initialMonth);
     setUnitCode("");
@@ -366,14 +391,8 @@ export function InvoiceModal({
     isCurrentReadingBelowPrevious(waterCurr, waterPrev);
   const hasReadingErrors = elecReadingInvalid || waterReadingInvalid;
 
-  const mutation = useMutation({
-    mutationFn: (payload: GenerateBillPayload) => generateBill(payload),
-    onSuccess: () => {
-      onSuccess();
-      onClose();
-    },
-    onError: (err: Error) => setError(err.message),
-  });
+  const mutation = useGenerateBillMutation();
+  const isPending = mutation.isPending;
 
   if (!open) return null;
 
@@ -411,6 +430,10 @@ export function InvoiceModal({
       );
       return;
     }
+    if (needsZeroReadingConfirm && !zeroReadingConfirmed) {
+      setError("Confirm the previous reading of 0 before saving.");
+      return;
+    }
 
     const monthForApi = resolveBillingMonthValue(
       billingRows.map((row) => row.Month),
@@ -418,6 +441,7 @@ export function InvoiceModal({
       selectedMonth,
     );
 
+    setFrozenData({ tenants, billingRows });
     mutation.mutate({
       month: monthForApi,
       room: String(selectedTenant.Room),
@@ -434,7 +458,27 @@ export function InvoiceModal({
       paid: readSheetNumber(amountPaid),
       notes: notes.trim() || undefined,
       moveInDate: isBeforeMoveIn ? billingMonthForCheck : undefined,
+    }, {
+      onSuccess: () => {
+        setFrozenData(null);
+        onSuccess();
+        onClose();
+      },
+      onError: (err) => {
+        setFrozenData(null);
+        // The bill exists despite the failed step — the toast says what to fix.
+        if (isCommittedFailure(err)) {
+          onSuccess();
+          onClose();
+          return;
+        }
+        setError(err.message);
+      },
     });
+  };
+
+  const requestClose = () => {
+    if (!isPending) onClose();
   };
 
   return (
@@ -451,7 +495,7 @@ export function InvoiceModal({
           </h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
             aria-label="Close"
           >
@@ -553,6 +597,35 @@ export function InvoiceModal({
                 />
                 Change move-in date to{" "}
                 {formatLongDate(billingMonthForCheck)} and create this bill
+              </label>
+            </div>
+          )}
+
+          {needsZeroReadingConfirm && !isDuplicate && selectedTenant && (
+            <div
+              className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+              role="alert"
+            >
+              <p>
+                The previous{" "}
+                <span className="font-semibold">
+                  {zeroPreviousReadings.join(" and ")}
+                </span>{" "}
+                reading is 0, so the full current meter value will be billed as
+                one month&apos;s usage. This is only correct for{" "}
+                {selectedTenant.UnitCode}&apos;s very first bill.
+              </p>
+              <label className="flex cursor-pointer items-start gap-2 font-medium">
+                <input
+                  type="checkbox"
+                  checked={zeroReadingConfirmed}
+                  onChange={(event) =>
+                    setZeroReadingConfirmed(event.target.checked)
+                  }
+                  className="mt-0.5 h-4 w-4 rounded border-amber-300 text-blue-500 focus:ring-blue-500/20"
+                />
+                This is the room&apos;s first bill — a previous reading of 0 is
+                correct
               </label>
             </div>
           )}
@@ -779,7 +852,7 @@ export function InvoiceModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={mutation.isPending}
+              disabled={isPending}
               className="rounded-lg bg-red-500 px-5 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60"
             >
               Cancel
@@ -787,14 +860,16 @@ export function InvoiceModal({
             <button
               type="submit"
               disabled={
-                mutation.isPending ||
+                isPending ||
                 hasReadingErrors ||
                 isDuplicate ||
-                (isBeforeMoveIn && !backdateMoveIn)
+                (isBeforeMoveIn && !backdateMoveIn) ||
+                (needsZeroReadingConfirm && !zeroReadingConfirmed)
               }
               className="rounded-lg bg-blue-500 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {mutation.isPending ? "Saving…" : "Save"}
+              {isPending && <ButtonSpinner className="mr-1.5" />}
+              {isPending ? "Saving…" : "Save"}
             </button>
           </div>
         </form>

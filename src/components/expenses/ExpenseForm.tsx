@@ -2,6 +2,7 @@
 
 import { CheckCircle2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
 import {
   FloatingLabelField,
   floatingInputClass,
@@ -679,6 +680,7 @@ export function ExpenseForm({
           disabled={isSaving}
           className="rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
         >
+          {isSaving && <ButtonSpinner className="mr-1.5" />}
           {isSaving
             ? "Saving..."
             : showSavedToast && !isDirty

@@ -6,32 +6,62 @@ import {
 } from "@/lib/mapBillingViewModel";
 import {
   generateSupabaseBill,
+  paySupabaseBalance,
   updateSupabaseBill,
 } from "@/lib/supabase/repository";
-import type { GenerateBillPayload, UpdateBillPayload } from "@/types/billing";
+import type {
+  BillingActionResult,
+  GenerateBillPayload,
+  PayBalancePayload,
+  UpdateBillPayload,
+} from "@/types/billing";
 
 const GOOGLE_APPS_SCRIPT_URL =
   process.env.NEXT_PUBLIC_SHEETS_API_URL ??
   "https://script.google.com/macros/s/AKfycbxOEKjwP5UXWUJLcsnqNZGWWUOOKTAF9XP5Ldx2Rx4ymHrIO0RoEQldrpnFqcGQH7ao/exec";
 
+/** 400 for rejected input, 500 when a server-side step failed. */
+function statusFor(result: BillingActionResult): number {
+  if (result.success) return 200;
+  return !result.step || result.step === "validate" ? 400 : 500;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
       action?: string;
-      data?: GenerateBillPayload | UpdateBillPayload;
+      data?: GenerateBillPayload | UpdateBillPayload | PayBalancePayload;
     };
+
+    if (body.action === "payBalance") {
+      if (!isSupabaseConfigured()) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Pay Balance requires the Supabase database.",
+          },
+          { status: 400 },
+        );
+      }
+      if (!body.data) {
+        return NextResponse.json(
+          { success: false, message: "Missing payment details." },
+          { status: 400 },
+        );
+      }
+      const result = await paySupabaseBalance(body.data as PayBalancePayload);
+      return NextResponse.json(result, { status: statusFor(result) });
+    }
 
     if (isSupabaseConfigured()) {
       if (body.action === "generateBill" && body.data) {
         const result = await generateSupabaseBill(body.data as GenerateBillPayload);
-        const status = result.success ? 200 : 400;
-        return NextResponse.json(result, { status });
+        return NextResponse.json(result, { status: statusFor(result) });
       }
 
       if (body.action === "updateBill" && body.data) {
         const result = await updateSupabaseBill(body.data as UpdateBillPayload);
-        const status = result.success ? 200 : 400;
-        return NextResponse.json(result, { status });
+        return NextResponse.json(result, { status: statusFor(result) });
       }
 
       return NextResponse.json(

@@ -1,6 +1,5 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Banknote,
   Building2,
@@ -11,30 +10,20 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
+import { usePayBalanceMutation } from "@/hooks/useBillingMutations";
+import { isCommittedFailure } from "@/lib/billingErrors";
 import { formatPesoDecimal } from "@/lib/format";
 import {
   allocatePaymentAcrossBills,
-  billUserNotes,
   formatStatementPeriodCompact,
   unpaidBillsOldestFirst,
-  type PaymentAllocation,
 } from "@/lib/mapBillingViewModel";
+import { manilaToday, toManilaDate } from "@/lib/manilaTime";
 import { billingMonthToDateInput, formatMonthLabel } from "@/lib/months";
 import { roundCurrency } from "@/lib/propertyBillingCalculations";
 import { readSheetNumber } from "@/lib/readSheetNumber";
-import { updateBill } from "@/services/api";
-import type { Bill, UpdateBillPayload } from "@/types/billing";
-
-function toOptionalIsoDate(value: string | null | undefined): string | undefined {
-  if (!value) return undefined;
-  const trimmed = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  const fromMonth = billingMonthToDateInput(trimmed);
-  if (fromMonth) return fromMonth;
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) return undefined;
-  return parsed.toISOString().slice(0, 10);
-}
+import type { Bill } from "@/types/billing";
 
 export type PaymentMethod = "cash" | "bank" | "online";
 
@@ -77,74 +66,26 @@ const paymentMethods: Array<{
   },
 ];
 
-function deriveStatus(totalDue: number, paid: number): string {
-  const balance = totalDue - paid;
-  if (balance <= 0) return "Paid";
-  if (paid > 0) return "Partial";
-  return "Unpaid";
-}
-
-function buildPaymentPayload(
-  bill: Bill,
-  paymentAmount: number,
-  method: PaymentMethod,
-  reference: string,
-  paymentDate: string,
-): UpdateBillPayload {
-  const newPaid = bill.amountPaid + paymentAmount;
-  const isoDate = toOptionalIsoDate(paymentDate);
-
-  return {
-    month: bill.billingMonth,
-    room: String(bill.room),
-    rent: bill.baseRent,
-    ePrev: bill.electricity.previous,
-    eCurr: bill.electricity.current,
-    eRate:
-      bill.electricity.current > bill.electricity.previous
-        ? bill.electricity.amount /
-          (bill.electricity.current - bill.electricity.previous)
-        : 14,
-    eBill: bill.electricity.amount,
-    wPrev: bill.water.previous,
-    wCurr: bill.water.current,
-    wRate:
-      bill.water.current > bill.water.previous
-        ? bill.water.amount / (bill.water.current - bill.water.previous)
-        : 30,
-    wBill: bill.water.amount,
-    adjustment: bill.otherCharges,
-    totalDue: bill.totalDue,
-    paid: newPaid,
-    status: deriveStatus(bill.totalDue, newPaid),
-    billingDate: toOptionalIsoDate(bill.billingDate),
-    dueDate: toOptionalIsoDate(bill.dueDate),
-    datePaid: isoDate,
-    // Keep existing user notes only — reference belongs on the payment activity.
-    notes: billUserNotes(bill.notes) || undefined,
-    paymentActivity: {
-      amount: paymentAmount,
-      method,
-      reference: reference.trim(),
-      paymentDate: isoDate || paymentDate,
-    },
-  };
-}
-
 export function PayBalanceModal({
   open,
   bills,
   onClose,
   onSuccess,
 }: PayBalanceModalProps) {
-  const queryClient = useQueryClient();
   const [paymentDate, setPaymentDate] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("bank");
   const [reference, setReference] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // While the payment is in flight the cache already shows it as paid; keep
+  // the form on the pre-payment bills so it doesn't reshuffle or vanish.
+  const [frozenBills, setFrozenBills] = useState<Bill[] | null>(null);
+  const visibleBills = frozenBills ?? bills;
 
-  const unpaidBills = useMemo(() => unpaidBillsOldestFirst(bills), [bills]);
+  const unpaidBills = useMemo(
+    () => unpaidBillsOldestFirst(visibleBills),
+    [visibleBills],
+  );
   const outstanding = roundCurrency(
     unpaidBills.reduce((sum, item) => sum + item.balance, 0),
   );
@@ -157,12 +98,16 @@ export function PayBalanceModal({
   useEffect(() => {
     if (!open) return;
     // Prefer plain numeric text so "Proceed" stays enabled without comma-parse issues.
-    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentDate(manilaToday());
     setAmount(oldestBalance > 0 ? oldestBalance.toFixed(2) : "");
     setMethod("bank");
     setReference("");
     setError(null);
   }, [open, oldestBalance]);
+
+  useEffect(() => {
+    if (!open) setFrozenBills(null);
+  }, [open]);
 
   const paymentAmount = readSheetNumber(amount);
   const amountInvalid = paymentAmount <= 0;
@@ -174,50 +119,25 @@ export function PayBalanceModal({
     [amountInvalid, unpaidBills, paymentAmount],
   );
 
-  const mutation = useMutation({
-    mutationFn: async ({
-      items,
-      credit,
-    }: {
-      items: PaymentAllocation[];
-      credit: number;
-    }) => {
-      for (const [index, item] of items.entries()) {
-        const isLast = index === items.length - 1;
-        const payload = buildPaymentPayload(
-          item.bill,
-          item.amount,
-          method,
-          isLast && credit > 0
-            ? `${reference.trim()} (+${formatPesoDecimal(credit)} carried over as credit)`.trim()
-            : reference,
-          paymentDate,
-        );
-        await updateBill(isLast && credit > 0 ? { ...payload, creditToTenant: credit } : payload);
-      }
-    },
-    onSuccess: () => {
-      onSuccess();
-      onClose();
-    },
-    onError: (err: Error) => {
-      // Earlier bills in the batch may already be saved — refresh so the UI matches.
-      void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
-      setError(err.message);
-    },
-  });
+  const mutation = usePayBalanceMutation();
+  const isPending = mutation.isPending;
+
+  // A pending payment can't be abandoned silently — its error would be lost.
+  const requestClose = () => {
+    if (!isPending) onClose();
+  };
 
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !isPending) onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, isPending]);
 
   const canSubmit =
-    allocations.length > 0 && Boolean(paymentDate) && !mutation.isPending;
+    allocations.length > 0 && Boolean(toManilaDate(paymentDate)) && !isPending;
 
   if (!open || unpaidBills.length === 0) return null;
 
@@ -225,12 +145,38 @@ export function PayBalanceModal({
     event.preventDefault();
     setError(null);
 
-    if (!canSubmit) {
+    const paymentDay = toManilaDate(paymentDate);
+    if (!canSubmit || !paymentDay) {
       setError("Enter a valid payment amount.");
       return;
     }
 
-    mutation.mutate({ items: allocations, credit: carryOverCredit });
+    setFrozenBills(visibleBills);
+    mutation.mutate(
+      {
+        room: unpaidBills[0].room,
+        amount: roundCurrency(paymentAmount),
+        paymentDate: paymentDay,
+        method,
+        reference: reference.trim(),
+      },
+      {
+        onSuccess: () => {
+          setFrozenBills(null);
+          onSuccess();
+          onClose();
+        },
+        onError: (err) => {
+          setFrozenBills(null);
+          if (isCommittedFailure(err)) {
+            onSuccess();
+            onClose();
+            return;
+          }
+          setError(err.message);
+        },
+      },
+    );
   };
 
   return (
@@ -240,7 +186,7 @@ export function PayBalanceModal({
       aria-modal="true"
       aria-labelledby="pay-balance-title"
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) requestClose();
       }}
     >
       <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-card">
@@ -260,7 +206,7 @@ export function PayBalanceModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
             aria-label="Close"
           >
@@ -444,7 +390,7 @@ export function PayBalanceModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={mutation.isPending}
+              disabled={isPending}
               className="text-sm font-semibold text-red-500 hover:text-red-600 disabled:opacity-60"
             >
               Cancel
@@ -454,8 +400,12 @@ export function PayBalanceModal({
               disabled={!canSubmit}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <CreditCard className="h-4 w-4" aria-hidden />
-              {mutation.isPending ? "Processing…" : "Proceed to Payment"}
+              {isPending ? (
+                <ButtonSpinner />
+              ) : (
+                <CreditCard className="h-4 w-4" aria-hidden />
+              )}
+              {isPending ? "Processing…" : "Proceed to Payment"}
             </button>
           </div>
         </form>

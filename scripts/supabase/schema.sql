@@ -296,6 +296,11 @@ end;
 $policy$;
 
 -- ---------------------------------------------------------------------------
+-- Functions — run after this file (required by "Pay Balance"):
+--   scripts/supabase/add-apply-tenant-payment.sql
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
 -- Seed data from Google Sheets export (BUILDING_RENTALS_API CSVs)
 -- Safe to re-run: ON CONFLICT upserts tenants and billing rows.
 -- ---------------------------------------------------------------------------

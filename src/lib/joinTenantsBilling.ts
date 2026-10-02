@@ -5,7 +5,7 @@ import {
   sortMonths,
 } from "@/lib/months";
 import { buildTenantBillingSummary } from "@/lib/tenantBillingSummary";
-import { buildTenantRowsForMonth } from "@/lib/tenantRooms";
+import { buildTenantRowsForMonth, isVacantTenant } from "@/lib/tenantRooms";
 import type { MonthOption } from "@/types/dashboard";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
@@ -34,7 +34,8 @@ export function resolveTenantDisplayStatus(
   tenant: TenantRecord,
   billingRows: SheetRow[],
 ): TenantDisplayStatus {
-  if (tenant.Status === "Vacant") {
+  // A moved-out room keeps its bills for analytics; they never set its status.
+  if (isVacantTenant(tenant) || !tenant.Name.trim()) {
     return "Vacant";
   }
 

@@ -1,3 +1,5 @@
+import { manilaMonthLabel } from "@/lib/manilaTime";
+
 const MONTH_NAMES = [
   "January",
   "February",
@@ -27,10 +29,9 @@ export function formatMonthLabel(month: string): string {
   return month;
 }
 
-/** Current calendar month as a label, e.g. "September 2026". */
+/** Current Manila calendar month as a label, e.g. "September 2026". */
 export function currentMonthLabel(): string {
-  const now = new Date();
-  return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
+  return manilaMonthLabel();
 }
 
 export function monthChartLabel(month: string): string {

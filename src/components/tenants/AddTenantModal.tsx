@@ -7,6 +7,7 @@ import { readSheetNumber } from "@/lib/readSheetNumber";
 import type { VacantTenantSlot } from "@/lib/tenantRooms";
 import { assignTenant } from "@/services/api";
 import type { AddTenantFormData } from "@/components/tenants/types";
+import { useToast } from "@/components/ui/Toast";
 
 interface AddTenantModalProps {
   open: boolean;
@@ -46,6 +47,7 @@ export function AddTenantModal({
   const [selectedRoom, setSelectedRoom] = useState("");
   const [form, setForm] = useState<AddTenantFormData>(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const hasVacancy = vacantSlots.length > 0;
 
@@ -75,7 +77,10 @@ export function AddTenantModal({
       onSuccess();
       onClose();
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => {
+      setError(err.message);
+      toast.error("Failed to add tenant", err.message);
+    },
   });
 
   const updateField = <K extends keyof AddTenantFormData>(

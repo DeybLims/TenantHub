@@ -1,4 +1,5 @@
 import type { ExpenseRecord } from "@/components/expenses/types";
+import { manilaToday, toManilaDate } from "@/lib/manilaTime";
 import { billingMonthKey } from "@/lib/months";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
@@ -87,6 +88,19 @@ export function sheetMonthToBillingDate(month: string): string {
   return month;
 }
 
+/**
+ * Any UI/API date value → Postgres `date` on the Manila calendar
+ * (payment_date, date_paid, billing_date, due_date). Null when unparseable.
+ */
+export function toDbDate(value: string | Date | null | undefined): string | null {
+  return toManilaDate(value);
+}
+
+/** Today on the Manila calendar, as a Postgres `date`. */
+export function todayDbDate(): string {
+  return manilaToday();
+}
+
 export function mapTenantRow(row: DbTenantRow): TenantRecord {
   return {
     UnitCode: row.unit_code,
@@ -123,9 +137,9 @@ export function mapBillingRow(row: DbBillingRow): SheetRow {
     Adjustment: row.adjustment,
     TotalDue: row.total_due,
     Paid: row.paid,
-    DatePaid: row.date_paid,
-    BillingDate: row.billing_date,
-    DueDate: row.due_date,
+    DatePaid: toManilaDate(row.date_paid),
+    BillingDate: toManilaDate(row.billing_date),
+    DueDate: toManilaDate(row.due_date),
     Notes: row.notes || null,
     Status: row.status,
   };

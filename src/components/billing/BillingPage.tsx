@@ -11,6 +11,8 @@ import { InvoiceModal } from "@/components/billing/InvoiceModal";
 import { PayBalanceModal } from "@/components/billing/PayBalanceModal";
 import { AppShell } from "@/components/layout/AppShell";
 import { buildBillingTableRows } from "@/lib/buildBillingRows";
+import { manilaToday } from "@/lib/manilaTime";
+import { isVacantTenant } from "@/lib/tenantRooms";
 import {
   aggregateBillingRowsByTenant,
   computeBillingDashboardSummary,
@@ -40,12 +42,10 @@ import type { TenantRecord } from "@/types/tenant";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
 function defaultDateRange(month: string): { from: string; to: string } {
-  const base =
-    billingMonthToDateInput(month) || new Date().toISOString().slice(0, 10);
-  const date = new Date(base);
-  const year = date.getFullYear();
-  const monthIndex = date.getMonth();
-  // Local YYYY-MM-DD — avoid toISOString() shifting the day in UTC+ timezones.
+  const base = billingMonthToDateInput(month) || manilaToday();
+  // Read the calendar fields directly — `new Date("YYYY-MM-DD")` is UTC midnight.
+  const [year, monthNumber] = base.split("-").map(Number);
+  const monthIndex = monthNumber - 1;
   const pad = (n: number) => String(n).padStart(2, "0");
   const from = `${year}-${pad(monthIndex + 1)}-15`;
   const next = new Date(year, monthIndex + 1, 15);
@@ -90,12 +90,20 @@ function filterBillingRowsByOccupancy(
   tenants: TenantRecord[],
 ): BillingTableRow[] {
   const occupancyByRoom = new Map<number, string>();
+  const vacantRooms = new Set<number>();
   for (const tenant of tenants) {
+    if (isVacantTenant(tenant) || !tenant.Name.trim()) {
+      vacantRooms.add(tenant.Room);
+      continue;
+    }
     const from = tenantOccupancyFromDate(tenant);
     if (from) occupancyByRoom.set(tenant.Room, from);
   }
 
   return rows.filter((row) => {
+    // Bills of a moved-out occupant stay in the database (and the Dashboard)
+    // but the room itself is empty here until a new tenant moves in.
+    if (vacantRooms.has(row.room)) return false;
     const from = occupancyByRoom.get(row.room);
     if (!from) return true;
     const rowKey = billingMonthKey(row.month);

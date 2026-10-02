@@ -1,3 +1,5 @@
+import { formatManilaDate } from "@/lib/manilaTime";
+
 export function formatPeso(value: number): string {
   return `₱ ${value.toLocaleString("en-PH", { maximumFractionDigits: 0 })}`;
 }
@@ -16,50 +18,28 @@ export function formatExpenseAmount(value: number): string {
   })}`;
 }
 
+/** August 30, 2025 */
 export function formatExpenseDate(value: string): string {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatManilaDate(value, "MMMM d, yyyy") ?? value;
 }
 
+/** Aug 30, 2025 */
 export function formatMoveInDate(value: string): string {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatManilaDate(value, "MMM d, yyyy") ?? value;
 }
 
 /** Table date format: Aug 30, 2025 */
 export function formatTableDate(value: string): string {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatManilaDate(value, "MMM d, yyyy") ?? value;
 }
 
 /** Long date for billing summary: July 04, 2025 */
 export function formatLongDate(value: string): string {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    day: "2-digit",
-    year: "numeric",
-  });
+  return formatManilaDate(value, "MMMM dd, yyyy") ?? value;
 }
 
 /** Formats DatePaid from billing; shows placeholder when unpaid or missing. */
@@ -74,12 +54,5 @@ export function formatDatePaid(
   const raw = datePaid != null ? String(datePaid).trim() : "";
   if (!raw) return null;
 
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return raw;
-
-  return date.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatManilaDate(raw, "MMM d, yyyy") ?? raw;
 }

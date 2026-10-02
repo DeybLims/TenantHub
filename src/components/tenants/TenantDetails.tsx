@@ -16,6 +16,7 @@ import {
   formatLongDate,
   formatPesoDecimal,
 } from "@/lib/format";
+import { toManilaDate } from "@/lib/manilaTime";
 import { buildTenantBillingSummary } from "@/lib/tenantBillingSummary";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import { getTenantInitials } from "@/lib/tenantInitials";
@@ -41,10 +42,7 @@ const fieldClass =
   "w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-navy placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
 
 function toDateInputValue(value: string | null | undefined): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
+  return toManilaDate(value) ?? "";
 }
 
 function formatCurrencyField(value: string | number): string {

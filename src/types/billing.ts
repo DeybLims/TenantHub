@@ -139,6 +139,42 @@ export interface UpdateBillPayload {
   creditToTenant?: number;
 }
 
+/** The step of a multi-step billing operation that failed. */
+export type BillingStep =
+  | "validate"
+  | "create_bill"
+  | "update_bill"
+  | "sync_meter_readings"
+  | "record_payment"
+  | "apply_credit";
+
+export interface BillingActionResult {
+  success: boolean;
+  message: string;
+  /** Set when `success` is false and a specific step failed. */
+  step?: BillingStep;
+  /**
+   * True when part of the operation was saved before the failure (the
+   * change could not be undone), so the client must not roll back.
+   */
+  committed?: boolean;
+}
+
+/** One payment applied atomically to a room's unpaid bills, oldest first. */
+export interface PayBalancePayload {
+  room: number;
+  amount: number;
+  /** YYYY-MM-DD on the Manila calendar. */
+  paymentDate: string;
+  method: BillPaymentMethod;
+  reference?: string;
+}
+
+export interface PayBalanceResult extends BillingActionResult {
+  /** Amount carried to the tenant's credit after every bill was paid. */
+  creditAdded?: number;
+}
+
 export interface BillingDetailSaveData {
   status: string;
   billingDate: string;

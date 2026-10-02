@@ -5,6 +5,7 @@ import { fetchFromSheets } from "@/lib/sheetsClient";
 import {
   fetchSupabaseTenants,
   saveSupabaseTenant,
+  vacateSupabaseTenant,
 } from "@/lib/supabase/repository";
 
 const GOOGLE_APPS_SCRIPT_URL =
@@ -68,12 +69,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(result, { status });
       }
 
+      // Soft delete: the profile is cleared, billing history is kept.
       if (body.action === "deleteTenant" && body.data) {
-        const result = await saveSupabaseTenant({
-          ...body.data,
-          name: "",
-          status: "Vacant",
-        });
+        const result = await vacateSupabaseTenant(
+          body.data.room as number | string | undefined,
+        );
         const status = result.success ? 200 : 400;
         return NextResponse.json(result, { status });
       }

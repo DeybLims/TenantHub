@@ -1,4 +1,6 @@
+import { format } from "date-fns";
 import { calculateBillingTotalDue } from "@/lib/buildUpdateBillPayload";
+import { toManilaDate } from "@/lib/manilaTime";
 import { billingMonthKey, billingMonthToDateInput } from "@/lib/months";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import { roundCurrency } from "@/lib/propertyBillingCalculations";
@@ -28,13 +30,6 @@ function endOfMonthDate(month: string): Date | null {
     return new Date(withDay.getFullYear(), withDay.getMonth() + 1, 0);
   }
   return new Date(parsed.getFullYear(), parsed.getMonth() + 1, 0);
-}
-
-function toDateInputValue(value: string | null | undefined): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
 }
 
 function daysUntil(date: Date): number {
@@ -148,7 +143,13 @@ export function buildTenantBillingSummary(
     lastPaymentAmount: latestPayment
       ? readSheetNumber(latestPayment.Paid)
       : 0,
-    nextDueDate: dueDate ? toDateInputValue(dueDate.toISOString()) : null,
+    // A stored due date is already a Manila calendar day; the month-end
+    // fallback is built from local calendar fields, so format those directly.
+    nextDueDate: dueDateRaw
+      ? toManilaDate(dueDateRaw)
+      : dueDate
+        ? format(dueDate, "yyyy-MM-dd")
+        : null,
     daysUntilDue: dueDate ? daysUntil(dueDate) : null,
   };
 }

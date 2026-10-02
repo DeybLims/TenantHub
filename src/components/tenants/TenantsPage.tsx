@@ -9,9 +9,9 @@ import { TenantDetails } from "@/components/tenants/TenantDetails";
 import { TenantDetailPlaceholder } from "@/components/tenants/TenantDetailPlaceholder";
 import { TenantsTable } from "@/components/tenants/TenantsTable";
 import type { TenantFormData } from "@/components/tenants/types";
+import { useToast } from "@/components/ui/Toast";
 import { AppShell } from "@/components/layout/AppShell";
 import {
-  getDefaultBillingMonth,
   joinTenantsWithBilling,
   type TenantTableRow,
 } from "@/lib/joinTenantsBilling";
@@ -35,7 +35,7 @@ const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 export function TenantsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [selectedMonth, setSelectedMonth] = useState("");
+  const toast = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<TenantTableRow | null>(
     null,
@@ -64,15 +64,12 @@ export function TenantsPage() {
     [tenants],
   );
 
-  useEffect(() => {
-    if (!billingRows || selectedMonth) return;
-    setSelectedMonth(getDefaultBillingMonth(billingRows));
-  }, [billingRows, selectedMonth]);
-
+  // The roster lists every current occupant, including move-ins after the
+  // latest billed month, so no month is passed here.
   const joinedTenants = useMemo(() => {
-    if (!tenants || !billingRows || !selectedMonth) return [];
-    return joinTenantsWithBilling(tenants, billingRows, selectedMonth);
-  }, [tenants, billingRows, selectedMonth]);
+    if (!tenants || !billingRows) return [];
+    return joinTenantsWithBilling(tenants, billingRows, "");
+  }, [tenants, billingRows]);
 
   const activeTenants = useMemo(
     () => joinedTenants.filter((tenant) => !isVacantTenant(tenant)),
@@ -121,15 +118,22 @@ export function TenantsPage() {
       void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
+    onError: (error) => {
+      toast.error("Failed to save tenant", error.message);
+    },
   });
 
   const deleteTenantMutation = useMutation({
     mutationFn: deleteTenant,
-    onSuccess: () => {
+    onSuccess: (message) => {
       setSelectedTenant(null);
+      toast.success("Tenant moved out", message);
       void queryClient.invalidateQueries({ queryKey: ["tenants"] });
       void queryClient.invalidateQueries({ queryKey: ["billing", "rows"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (error) => {
+      toast.error("Failed to remove tenant", error.message);
     },
   });
 

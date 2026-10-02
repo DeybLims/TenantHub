@@ -1,7 +1,8 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useToast } from "@/components/ui/Toast";
 import {
   defaultExpenseRecord,
   expenseRecordStorageKey,
@@ -21,7 +22,11 @@ import {
   isBillingFullyPaid,
 } from "@/lib/paymentAllocation";
 import { billingMonthKey } from "@/lib/months";
-import { fetchUtilityExpense, saveUtilityExpense } from "@/services/api";
+import {
+  fetchUtilityExpense,
+  saveUtilityExpense,
+  type UtilityExpenseResponse,
+} from "@/services/api";
 import type { SheetRow } from "@/types/sheet";
 import type { TenantRecord } from "@/types/tenant";
 
@@ -292,9 +297,11 @@ export function useUtilityExpenseAnalytics({
   const [savedSnapshot, setSavedSnapshot] = useState<ExpenseRecord>(() =>
     defaultExpenseRecord(selectedMonth),
   );
-  const [isSaving, setIsSaving] = useState(false);
+  /** Unsaved edits to put back after a failed save rolls the cache back. */
+  const rollbackDraftRef = useRef<ExpenseRecord | null>(null);
 
   const queryClient = useQueryClient();
+  const toast = useToast();
   const storedQuery = useQuery({
     queryKey: utilityExpenseQueryKey(selectedMonth),
     queryFn: () => fetchUtilityExpense(selectedMonth),
@@ -324,13 +331,18 @@ export function useUtilityExpenseAnalytics({
     }
 
     const saved = stored.record ?? defaultExpenseRecord(selectedMonth);
+    const rollbackDraft =
+      rollbackDraftRef.current?.billingMonth === selectedMonth
+        ? rollbackDraftRef.current
+        : null;
+    rollbackDraftRef.current = null;
     // Values typed before expenses moved to Supabase show as unsaved changes
     // so they can be saved to the database or discarded with Cancel.
     const legacyDraft = stored.record
       ? null
       : loadLocalExpenseRecord(selectedMonth);
     setSavedSnapshot(saved);
-    setRecord(legacyDraft ?? saved);
+    setRecord(rollbackDraft ?? legacyDraft ?? saved);
   }, [selectedMonth, stored]);
 
   const updateRecord = useCallback((patch: Partial<ExpenseRecord>) => {
@@ -437,6 +449,45 @@ export function useUtilityExpenseAnalytics({
     };
   }, [sheetAnalytics, record, derived]);
 
+  // The cache is written before the request finishes, so the form shows
+  // "saved" instantly; on failure the cache and the user's edits are restored.
+  const saveMutation = useMutation<
+    void,
+    Error,
+    ExpenseRecord,
+    { previous: UtilityExpenseResponse | undefined }
+  >({
+    mutationFn: saveUtilityExpense,
+    onMutate: async (toSave) => {
+      const queryKey = utilityExpenseQueryKey(toSave.billingMonth);
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<UtilityExpenseResponse>(queryKey);
+      queryClient.setQueryData<UtilityExpenseResponse>(queryKey, {
+        configured: true,
+        record: toSave,
+      });
+      return { previous };
+    },
+    onError: (error, toSave, context) => {
+      rollbackDraftRef.current = toSave;
+      queryClient.setQueryData(
+        utilityExpenseQueryKey(toSave.billingMonth),
+        context?.previous,
+      );
+      toast.error(
+        "Failed to save expenses",
+        `${error.message} Your changes are still on the form.`,
+      );
+    },
+    onSuccess: (_data, toSave) => {
+      clearLocalExpenseRecord(toSave.billingMonth);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+  const isSaving = saveMutation.isPending;
+
   const save = useCallback(async () => {
     if (!selectedMonth) return;
     const toSave = {
@@ -444,25 +495,15 @@ export function useUtilityExpenseAnalytics({
       billingMonth: selectedMonth,
     };
 
-    setIsSaving(true);
-    try {
-      if (usesSupabase) {
-        await saveUtilityExpense(toSave);
-        clearLocalExpenseRecord(selectedMonth);
-        queryClient.setQueryData(utilityExpenseQueryKey(selectedMonth), {
-          configured: true,
-          record: toSave,
-        });
-        void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      } else {
-        saveLocalExpenseRecord(selectedMonth, toSave);
-      }
-      setRecord(toSave);
-      setSavedSnapshot(toSave);
-    } finally {
-      setIsSaving(false);
+    if (usesSupabase) {
+      await saveMutation.mutateAsync(toSave);
+      return;
     }
-  }, [record, selectedMonth, usesSupabase, queryClient]);
+
+    saveLocalExpenseRecord(selectedMonth, toSave);
+    setRecord(toSave);
+    setSavedSnapshot(toSave);
+  }, [record, selectedMonth, usesSupabase, saveMutation]);
 
   const cancel = useCallback(() => {
     if (usesSupabase && selectedMonth) clearLocalExpenseRecord(selectedMonth);

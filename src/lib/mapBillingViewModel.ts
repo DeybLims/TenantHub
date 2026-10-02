@@ -1,3 +1,4 @@
+import { formatManilaDate, manilaToday, toManilaDate } from "@/lib/manilaTime";
 import { billingMonthKey, billingMonthToDateInput, formatMonthLabel } from "@/lib/months";
 import { readSheetNumber } from "@/lib/readSheetNumber";
 import {
@@ -33,25 +34,7 @@ function buildBillId(row: SheetRow, room: number): string {
 }
 
 function toIsoDate(value: string | null | undefined, fallback: string): string {
-  const tryParse = (raw: string): string | null => {
-    // Already YYYY-MM-DD
-    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-    const date = new Date(raw);
-    if (Number.isNaN(date.getTime())) return null;
-    return date.toISOString().slice(0, 10);
-  };
-
-  if (value) {
-    const parsed = tryParse(value.trim());
-    if (parsed) return parsed;
-  }
-
-  if (fallback) {
-    const parsed = tryParse(fallback.trim());
-    if (parsed) return parsed;
-  }
-
-  return new Date().toISOString().slice(0, 10);
+  return toManilaDate(value) ?? toManilaDate(fallback) ?? manilaToday();
 }
 
 export function sheetRowToBill(
@@ -306,15 +289,8 @@ export function summarizeBills(bills: Bill[]): BillingPeriodSummary {
 
 export function formatStatementPeriod(fromDate: string, toDate: string): string {
   if (!fromDate && !toDate) return "All periods";
-  const format = (value: string) => {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
+  const format = (value: string) =>
+    formatManilaDate(value, "MMM d, yyyy") ?? value;
   if (fromDate && toDate) return `${format(fromDate)} – ${format(toDate)}`;
   return format(fromDate || toDate);
 }
@@ -326,17 +302,10 @@ export function formatStatementPeriodCompact(
 ): string {
   if (!fromDate && !toDate) return "ALL PERIODS";
 
-  const formatMonth = (value: string) => {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value.toUpperCase();
-    return date.toLocaleDateString("en-US", { month: "long" }).toUpperCase();
-  };
+  const formatMonth = (value: string) =>
+    (formatManilaDate(value, "MMMM") ?? value).toUpperCase();
 
-  const formatYear = (value: string) => {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "";
-    return String(date.getFullYear());
-  };
+  const formatYear = (value: string) => formatManilaDate(value, "yyyy") ?? "";
 
   const fromMonth = formatMonth(fromDate);
   const toMonth = formatMonth(toDate || fromDate);
@@ -359,15 +328,12 @@ export function formatBillDateBlock(dateValue: string): {
   day: string;
   year: string;
 } {
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) {
+  const parts = formatManilaDate(dateValue, "MMM|dd|yyyy");
+  if (!parts) {
     return { month: "—", day: "—", year: "—" };
   }
-  return {
-    month: date.toLocaleDateString("en-US", { month: "short" }).toUpperCase(),
-    day: String(date.getDate()).padStart(2, "0"),
-    year: String(date.getFullYear()),
-  };
+  const [month, day, year] = parts.split("|");
+  return { month: month.toUpperCase(), day, year };
 }
 
 export function isPaymentActivityLine(line: string): boolean {
@@ -415,15 +381,9 @@ export function formatPaymentMethodLabel(method: BillPaymentMethod | string): st
 export function formatPaymentActivityLine(activity: PaymentActivity): string {
   const parts: string[] = [];
   if (activity.paymentDate) {
-    const date = new Date(activity.paymentDate);
     parts.push(
-      Number.isNaN(date.getTime())
-        ? activity.paymentDate
-        : date.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          }),
+      formatManilaDate(activity.paymentDate, "MMM d, yyyy") ??
+        activity.paymentDate,
     );
   }
   parts.push(

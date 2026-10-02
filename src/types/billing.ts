@@ -101,6 +101,11 @@ export interface GenerateBillPayload {
   /** Paid when the bill is created; any excess over Total Due becomes tenant credit. */
   paid?: number;
   notes?: string;
+  /**
+   * YYYY-MM-DD. Required when billing a month before the tenant's move-in —
+   * the tenant's move-in is moved back to this date so the bill stays visible.
+   */
+  moveInDate?: string;
 }
 
 export interface UpdateBillPayload {

@@ -339,6 +339,46 @@ export async function saveSupabaseTenant(
   return { success: true, message: "Tenant committed successfully to database." };
 }
 
+/**
+ * Bills before the occupant's move-in month are hidden everywhere, so they are
+ * only allowed when the caller also moves the move-in back to cover them.
+ * Returns an error result, or null when the bill may be created.
+ */
+async function ensureBillIsWithinOccupancy(
+  room: number,
+  billingMonth: string,
+  moveInDate: string | undefined,
+): Promise<ApiResult | null> {
+  const supabase = getSupabaseAdmin();
+  const { data: tenant, error } = await supabase
+    .from("tenants")
+    .select("move_in, lease_start")
+    .eq("room", room)
+    .maybeSingle<{ move_in: string | null; lease_start: string | null }>();
+
+  if (error) throw new Error(error.message);
+
+  const occupancyKey = billingMonthKey(tenant?.move_in ?? tenant?.lease_start ?? "");
+  const billingKey = billingMonthKey(billingMonth);
+  if (!occupancyKey || !billingKey || billingKey >= occupancyKey) return null;
+
+  if (!isIsoDate(moveInDate) || billingMonthKey(moveInDate) > billingKey) {
+    return {
+      success: false,
+      message:
+        "This month is before the tenant's move-in date. Move the move-in date back to bill it.",
+    };
+  }
+
+  const { error: updateError } = await supabase
+    .from("tenants")
+    .update({ move_in: moveInDate })
+    .eq("room", room);
+  if (updateError) throw new Error(updateError.message);
+
+  return null;
+}
+
 export async function generateSupabaseBill(
   data: GenerateBillPayload,
 ): Promise<ApiResult> {
@@ -361,6 +401,13 @@ export async function generateSupabaseBill(
       message: "A bill already exists for this room and month.",
     };
   }
+
+  const moveInCheck = await ensureBillIsWithinOccupancy(
+    room,
+    billingMonth,
+    data.moveInDate,
+  );
+  if (moveInCheck) return moveInCheck;
 
   const eCons = Number(data.eCurr) - Number(data.ePrev);
   const wCons = Number(data.wCurr) - Number(data.wPrev);

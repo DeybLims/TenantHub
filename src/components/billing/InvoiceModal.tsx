@@ -8,6 +8,7 @@ import {
   isCurrentReadingBelowPrevious,
 } from "@/lib/billingMeters";
 import { hasBillForRoomMonth } from "@/lib/buildBillingRows";
+import { formatLongDate } from "@/lib/format";
 import {
   buildBillsForRoom,
   tenantOccupancyFromDate,
@@ -195,6 +196,17 @@ export function InvoiceModal({
   }, [billingRows, billingMonthForCheck, selectedTenant]);
 
   const billingMonthLabel = formatMonthLabel(billingMonthForCheck);
+
+  // Bills before move-in are hidden on the Billing page, so billing an earlier
+  // month requires moving the tenant's move-in back to that month.
+  const occupancyFrom = tenantOccupancyFromDate(selectedTenant);
+  const isBeforeMoveIn =
+    Boolean(billingMonth && occupancyFrom) &&
+    billingMonth < billingMonthKey(occupancyFrom);
+  const [backdateMoveIn, setBackdateMoveIn] = useState(false);
+  useEffect(() => {
+    setBackdateMoveIn(false);
+  }, [billingMonth, unitCode]);
 
   useEffect(() => {
     if (!open) return;
@@ -393,6 +405,12 @@ export function InvoiceModal({
       );
       return;
     }
+    if (isBeforeMoveIn && !backdateMoveIn) {
+      setError(
+        `${billingMonthLabel} is before ${selectedTenant.UnitCode}'s move-in date. Tick the box to move the move-in date back first.`,
+      );
+      return;
+    }
 
     const monthForApi = resolveBillingMonthValue(
       billingRows.map((row) => row.Month),
@@ -415,6 +433,7 @@ export function InvoiceModal({
       dueDate: dueDate || undefined,
       paid: readSheetNumber(amountPaid),
       notes: notes.trim() || undefined,
+      moveInDate: isBeforeMoveIn ? billingMonthForCheck : undefined,
     });
   };
 
@@ -509,6 +528,32 @@ export function InvoiceModal({
               Invoice denied: Room {selectedTenant.Room} already has a bill for{" "}
               {billingMonthLabel}. Choose a different billing month to create a
               new invoice.
+            </div>
+          )}
+
+          {isBeforeMoveIn && !isDuplicate && selectedTenant && (
+            <div
+              className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+              role="alert"
+            >
+              <p>
+                {selectedTenant.UnitCode}&apos;s move-in date is{" "}
+                <span className="font-semibold">
+                  {formatLongDate(selectedTenant.MoveIn || selectedTenant.LeaseStart)}
+                </span>
+                , so a {billingMonthLabel} bill would be hidden on the Billing
+                page.
+              </p>
+              <label className="flex cursor-pointer items-start gap-2 font-medium">
+                <input
+                  type="checkbox"
+                  checked={backdateMoveIn}
+                  onChange={(event) => setBackdateMoveIn(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-amber-300 text-blue-500 focus:ring-blue-500/20"
+                />
+                Change move-in date to{" "}
+                {formatLongDate(billingMonthForCheck)} and create this bill
+              </label>
             </div>
           )}
 
@@ -741,7 +786,12 @@ export function InvoiceModal({
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || hasReadingErrors || isDuplicate}
+              disabled={
+                mutation.isPending ||
+                hasReadingErrors ||
+                isDuplicate ||
+                (isBeforeMoveIn && !backdateMoveIn)
+              }
               className="rounded-lg bg-blue-500 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {mutation.isPending ? "Saving…" : "Save"}
